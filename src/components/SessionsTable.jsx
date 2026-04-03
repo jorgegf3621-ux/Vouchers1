@@ -36,15 +36,9 @@ export function StatusSelect({ value, onChange }) {
 export default function SessionsTable({
   sessions,
   progress,
-  notes,
-  dynCal,
   onComplete,
-  onNote,
   onStatusChange,
-  showCallDay = true,
-  showSpecialist = false,
 }) {
-  // Sort by priority: Contacted > Processing > Pending, then by date
   const sorted = [...sessions].sort((a, b) => {
     const pa = priorityOrder(a.status), pb = priorityOrder(b.status)
     if (pa !== pb) return pa - pb
@@ -58,17 +52,12 @@ export default function SessionsTable({
     <div>
       {overdue.length > 0 && (
         <GroupTable
-          title="Overdue / Sprint List"
+          title="Overdue"
           badgeColor="var(--red-t)"
           sessions={overdue}
           progress={progress}
-          notes={notes}
-          dynCal={dynCal}
           onComplete={onComplete}
-          onNote={onNote}
           onStatusChange={onStatusChange}
-          showCallDay={showCallDay}
-          showSpecialist={showSpecialist}
         />
       )}
       {future.length > 0 && (
@@ -77,20 +66,15 @@ export default function SessionsTable({
           badgeColor="var(--green-t)"
           sessions={future}
           progress={progress}
-          notes={notes}
-          dynCal={dynCal}
           onComplete={onComplete}
-          onNote={onNote}
           onStatusChange={onStatusChange}
-          showCallDay={showCallDay}
-          showSpecialist={showSpecialist}
         />
       )}
     </div>
   )
 }
 
-function GroupTable({ title, badgeColor, sessions, progress, notes, dynCal, onComplete, onNote, onStatusChange, showCallDay, showSpecialist }) {
+function GroupTable({ title, badgeColor, sessions, progress, onComplete, onStatusChange }) {
   const done = sessions.filter(s => progress[s.voucher_number]?.completed).length
 
   return (
@@ -107,12 +91,9 @@ function GroupTable({ title, badgeColor, sessions, progress, notes, dynCal, onCo
             <tr>
               <th style={thStyle}>#</th>
               <th style={thStyle}>Voucher</th>
-              {showSpecialist && <th style={thStyle}>Specialist</th>}
               <th style={thStyle}>Status</th>
-              <th style={thStyle}>Current Date</th>
-              {showCallDay && <th style={thStyle}>Call Day</th>}
+              <th style={thStyle}>Next Call</th>
               <th style={thStyle}>New Date</th>
-              <th style={thStyle}>Notes</th>
               <th style={{ ...thStyle, width: 44, textAlign: 'center' }}>✓</th>
             </tr>
           </thead>
@@ -120,11 +101,7 @@ function GroupTable({ title, badgeColor, sessions, progress, notes, dynCal, onCo
             {sessions.map((s, i) => {
               const p = progress[s.voucher_number]
               const isDone = !!p?.completed
-              const nd = p?.new_call_date || s.suggested_date || ''
-              const ndLoad = nd && dynCal ? (dynCal[nd]?.count || 0) : 0
-              const ndColor = ndLoad >= 15 ? 'var(--red-t)' : ndLoad >= 12 ? 'var(--amber-t)' : 'var(--green-t)'
-              const ndBg = ndLoad >= 15 ? 'var(--red-bg)' : ndLoad >= 12 ? 'var(--amber-bg)' : 'var(--green-bg)'
-              const hasNote = !!notes?.[s.voucher_number]
+              const nd = p?.new_call_date || ''
 
               return (
                 <tr key={s.voucher_number} style={{ opacity: isDone ? 0.38 : 1, transition: 'opacity .15s' }}
@@ -132,7 +109,6 @@ function GroupTable({ title, badgeColor, sessions, progress, notes, dynCal, onCo
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <td style={tdStyle('var(--text3)', 11)}>{i + 1}</td>
                   <td style={tdStyle()}><VoucherLink voucher={s.voucher_number} /></td>
-                  {showSpecialist && <td style={tdStyle('var(--text2)', 11)}>{s.case_specialist}</td>}
                   <td style={tdStyle()}>
                     {onStatusChange
                       ? <StatusSelect value={s.status} onChange={v => onStatusChange(s.voucher_number, v)} />
@@ -140,29 +116,11 @@ function GroupTable({ title, badgeColor, sessions, progress, notes, dynCal, onCo
                     }
                   </td>
                   <td style={tdStyle('var(--text3)', 11)}>{fmtDate(s.next_call_date)}</td>
-                  {showCallDay && (
-                    <td style={tdStyle()}>
-                      {s.call_day
-                        ? <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 3, fontWeight: 500, background: 'var(--amber-bg)', color: 'var(--amber-t)' }}>{fmtDate(s.call_day)}</span>
-                        : <span style={{ color: 'var(--text3)' }}>—</span>
-                      }
-                    </td>
-                  )}
                   <td style={tdStyle()}>
                     {nd
-                      ? <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: ndBg, color: ndColor }}>{fmtDate(nd)}</span>
+                      ? <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: 'var(--green-bg)', color: 'var(--green-t)' }}>{fmtDate(nd)}</span>
                       : <span style={{ color: 'var(--text3)' }}>—</span>
                     }
-                  </td>
-                  <td style={tdStyle()}>
-                    <button onClick={() => onNote?.(s.voucher_number)} style={{
-                      background: hasNote ? 'var(--amber-bg)' : 'var(--bg4)',
-                      border: `1px solid ${hasNote ? 'rgba(245,166,35,.3)' : 'var(--border2)'}`,
-                      borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer',
-                      color: hasNote ? 'var(--amber-t)' : 'var(--text3)',
-                    }}>
-                      {hasNote ? '📝 View' : '+ Note'}
-                    </button>
                   </td>
                   <td style={{ ...tdStyle(), textAlign: 'center' }}>
                     <Checkmark checked={isDone} onClick={() => onComplete?.(s.voucher_number, s.next_call_date)} />
