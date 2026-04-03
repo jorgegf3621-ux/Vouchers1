@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useSpecialistData } from '../hooks/useData'
 import { buildSprintPlan, detectSnowball, calcWeeklyStreak, CAP_DAY, TODAY_ISO, fmtDate, priorityOrder } from '../lib/sprint'
 import { Card, Tabs, Alert, StatCard, SyncStatus, ProgressBar, StatusBadge } from '../components/ui'
@@ -186,20 +186,23 @@ function SpecialistView({ name }) {
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '20px 16px' }}>
       {/* Header */}
-      <div style={{ background: 'var(--bg2)', borderRadius: 'var(--rl)', border: '1px solid var(--border)', padding: '16px 20px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-        <div style={{ width: 40, height: 40, borderRadius: 'var(--r)', background: 'var(--blue-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>{name}</div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Voucher Sessions · {dateLabel}</div>
+      <div style={{ background: 'var(--bg2)', borderRadius: 'var(--rl)', border: '1px solid var(--border)', padding: '16px 20px', marginBottom: 14 }}>
+        {/* Top row: Name + Stats */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 'var(--r)', background: 'var(--blue-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{name}</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Voucher Sessions · {dateLabel}</div>
+          </div>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <StatCard label="Backlog" value={overdueLeft} variant="danger" />
+            <StatCard label="Due Today" value={Math.min(sprintToday.length + schedToday.length, CAP_DAY)} variant="warn" />
+            <StatCard label="Done" value={totalDone} variant="good" />
+            {weeklyStreak > 0 && <div style={{ padding: '6px 12px', borderRadius: 'var(--r)', background: 'var(--green-bg)', border: '1px solid rgba(61,214,140,.3)', fontSize: 12, fontWeight: 700, color: 'var(--green-t)', display: 'flex', alignItems: 'center', gap: 4 }}>🔥 {weeklyStreak}d streak</div>}
+          </div>
         </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <StatCard label="Backlog" value={overdueLeft} variant="danger" />
-          <StatCard label="Due Today" value={Math.min(sprintToday.length + schedToday.length, CAP_DAY)} variant="warn" />
-          <StatCard label="Done" value={totalDone} variant="good" />
-          <StatCard label="Total" value={sessions.length} />
-          {weeklyStreak > 0 && <div style={{ padding: '4px 10px', borderRadius: 'var(--r)', background: 'var(--green-bg)', border: '1px solid rgba(61,214,140,.3)', fontSize: 11, fontWeight: 700, color: 'var(--green-t)' }}>🔥 {weeklyStreak}d streak</div>}
-          <Link to="/" style={{ fontSize: 11, color: 'var(--text3)', textDecoration: 'none', padding: '4px 8px', borderRadius: 'var(--r)', background: 'var(--bg3)' }}>🏠 Dashboard</Link>
-        </div>
+        {/* Progress bar */}
+        <ProgressBar value={overdue.filter(s => progress[s.voucher_number]?.completed).length} total={overdue.length} label={`${overdue.filter(s => progress[s.voucher_number]?.completed).length} of ${overdue.length} overdue completed`} />
       </div>
 
       <div style={{ marginBottom: 12 }}><SyncStatus {...syncState} /></div>
