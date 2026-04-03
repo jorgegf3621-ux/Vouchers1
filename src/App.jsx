@@ -4,6 +4,7 @@ import TLConsolePage from './pages/TLConsolePage'
 
 const SPECIALISTS = [
   { key: 'alejandro-guerrero', name: 'Alejandro Guerrero' },
+  { key: 'fidel-sanchez', name: 'Fidel Sanchez' },
   { key: 'jonathan-flores', name: 'Jonathan Flores' },
   { key: 'jose-angel-aleman', name: 'Jose Angel Aleman' },
   { key: 'juno-urdiales', name: 'Juno Urdiales' },

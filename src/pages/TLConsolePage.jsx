@@ -10,6 +10,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 
 const SPECIALIST_MAP = {
   'alejandro-guerrero': 'Alejandro Guerrero',
+  'fidel-sanchez': 'Fidel Sanchez',
   'jonathan-flores': 'Jonathan Flores',
   'jose-angel-aleman': 'Jose Angel Aleman',
   'juno-urdiales': 'Juno Urdiales',
@@ -41,6 +42,20 @@ export default function TLConsolePage() {
   const [searchSessions, setSearchSessions] = useState('')
   const [filterSpec, setFilterSpec] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [viewVouchers, setViewVouchers] = useState(null) // specialist name to show vouchers
+  const [voucherFilter, setVoucherFilter] = useState('All') // status filter for voucher list
+
+  // Vouchers for the selected specialist
+  const viewVouchersSessions = useMemo(() => {
+    if (!viewVouchers) return []
+    return sessions.filter(s => s.case_specialist === viewVouchers)
+  }, [viewVouchers, sessions])
+
+  // Filtered vouchers
+  const filteredViewVouchers = useMemo(() => {
+    if (voucherFilter === 'All') return viewVouchersSessions
+    return viewVouchersSessions.filter(s => s.status === voucherFilter)
+  }, [viewVouchersSessions, voucherFilter])
 
   // Auto-select specialist from URL
   useEffect(() => {
@@ -366,8 +381,9 @@ export default function TLConsolePage() {
                 {specStats.map(({ spec, total, overdue, done, left, byStatus }) => {
                   const pct = overdue ? Math.round(done / overdue * 100) : 100
                   const color = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)'
+                  const isViewing = viewVouchers === spec
                   return (
-                    <Card key={spec} style={{ cursor: 'pointer' }} onClick={() => setFilterSpec(spec)}>
+                    <Card key={spec} style={{ cursor: 'pointer', border: isViewing ? '2px solid var(--blue)' : '1px solid var(--border)' }} onClick={() => { setViewVouchers(isViewing ? null : spec); setVoucherFilter('All') }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                         <span style={{ fontSize: 13, fontWeight: 700 }}>👤 {spec}</span>
                         <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 3, background: left > 25 ? 'var(--red-bg)' : left > 10 ? 'var(--amber-bg)' : 'var(--green-bg)', color: left > 25 ? 'var(--red-t)' : left > 10 ? 'var(--amber-t)' : 'var(--green-t)' }}>
@@ -403,6 +419,63 @@ export default function TLConsolePage() {
                   )
                 })}
               </div>
+
+              {/* Voucher List for selected specialist */}
+              {viewVouchers && (
+                <Card style={{ marginTop: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>📋 {viewVouchers} — Voucher Breakdown</div>
+                      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Click a voucher number to open it</div>
+                    </div>
+                    <Btn variant="default" size="sm" onClick={(e) => { e.stopPropagation(); setViewVouchers(null) }}>✕ Close</Btn>
+                  </div>
+
+                  {/* Filter by status */}
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12 }}>
+                    {['All', 'Contacted', 'Processing', 'Pending', 'Filed'].map(st => {
+                      const isActive = voucherFilter === st
+                      const count = st === 'All' ? viewVouchersSessions.length : viewVouchersSessions.filter(s => s.status === st).length
+                      return (
+                        <button key={st} onClick={() => setVoucherFilter(st)} style={{
+                          padding: '4px 12px', fontSize: 11, borderRadius: 20, border: '1px solid var(--border2)',
+                          background: isActive ? 'var(--text)' : 'var(--bg3)', color: isActive ? 'var(--bg)' : 'var(--text2)',
+                          cursor: 'pointer', fontWeight: isActive ? 600 : 400,
+                        }}>{st} ({count})</button>
+                      )
+                    })}
+                  </div>
+
+                  <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          <th style={thSt}>#</th>
+                          <th style={thSt}>Voucher</th>
+                          <th style={thSt}>Status</th>
+                          <th style={thSt}>Next Call</th>
+                          <th style={thSt}>Overdue</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredViewVouchers.map((s, i) => (
+                          <tr key={s.voucher_number}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            <td style={tdSt}>{i + 1}</td>
+                            <td style={tdSt}>
+                              <VoucherLink voucher={s.voucher_number} />
+                            </td>
+                            <td style={tdSt}><StatusBadge status={s.status} /></td>
+                            <td style={{ ...tdSt, fontSize: 11, color: 'var(--text3)' }}>{s.next_call_date || '—'}</td>
+                            <td style={tdSt}>{s.is_overdue ? <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 3, background: 'var(--red-bg)', color: 'var(--red-t)' }}>Yes</span> : <span style={{ color: 'var(--text3)' }}>—</span>}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              )}
             </div>
           )}
         </div>
