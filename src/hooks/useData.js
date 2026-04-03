@@ -9,7 +9,7 @@ const PAGE_SIZE = 1000
 function computeIsOverdue(session) {
   if (!session.next_call_date) return false
   if (!OVERDUE_STATUSES.includes(session.status)) return false
-  return session.next_call_date <= TODAY_ISO
+  return session.next_call_date < TODAY_ISO
 }
 
 async function fetchAllRows(query, pageSize = PAGE_SIZE) {
