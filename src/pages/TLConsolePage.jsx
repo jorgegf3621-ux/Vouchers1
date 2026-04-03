@@ -160,7 +160,10 @@ function SpecialistView({ name }) {
 
   const handleComplete = (voucher, currentDate) => {
     if (progress[voucher]?.completed) { undoComplete(voucher) }
-    else setCompleteModal({ voucher, currentDate })
+    else {
+      const session = sessions.find(s => s.voucher_number === voucher)
+      setCompleteModal({ voucher, currentDate, currentStatus: session?.status || 'Contacted' })
+    }
   }
 
   const dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
@@ -260,7 +263,25 @@ function SpecialistView({ name }) {
         </Card>
       )}
 
-      <CompleteModal open={!!completeModal} voucher={completeModal?.voucher} currentDate={completeModal?.currentDate} dynCal={dynCal} onConfirm={date => { markComplete(completeModal.voucher, date); setCompleteModal(null) }} onClose={() => setCompleteModal(null)} />
+      <CompleteModal
+        open={!!completeModal}
+        voucher={completeModal?.voucher}
+        currentDate={completeModal?.currentDate}
+        currentStatus={completeModal?.currentStatus}
+        dynCal={dynCal}
+        onConfirm={(date, status) => {
+          if (status !== completeModal.currentStatus) {
+            updateStatus(completeModal.voucher, status)
+          }
+          if (date && status !== 'Completed' && status !== 'Cancelled') {
+            markComplete(completeModal.voucher, date)
+          } else if (status === 'Completed') {
+            markComplete(completeModal.voucher, null)
+          }
+          setCompleteModal(null)
+        }}
+        onClose={() => setCompleteModal(null)}
+      />
       <NoteModal open={!!noteModal} voucher={noteModal?.voucher} existingNote={notes[noteModal?.voucher]?.note} onSave={text => saveNote(noteModal.voucher, text)} onDelete={() => deleteNote(noteModal.voucher)} onClose={() => setNoteModal(null)} />
     </div>
   )
