@@ -201,8 +201,11 @@ function SpecialistView({ name }) {
             {weeklyStreak > 0 && <div style={{ padding: '6px 12px', borderRadius: 'var(--r)', background: 'var(--green-bg)', border: '1px solid rgba(61,214,140,.3)', fontSize: 12, fontWeight: 700, color: 'var(--green-t)', display: 'flex', alignItems: 'center', gap: 4 }}>🔥 {weeklyStreak}d streak</div>}
           </div>
         </div>
-        {/* Progress bar */}
-        <ProgressBar value={overdue.filter(s => progress[s.voucher_number]?.completed).length} total={overdue.length} label={`${overdue.filter(s => progress[s.voucher_number]?.completed).length} of ${overdue.length} overdue completed`} />
+        {/* Progress bars */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <ProgressBar value={overdue.filter(s => progress[s.voucher_number]?.completed).length} total={Math.max(1, overdue.length)} label={`Backlog: ${overdue.filter(s => progress[s.voucher_number]?.completed).length}/${overdue.length} done`} />
+          <ProgressBar value={sprintToday.filter(s => progress[s.voucher_number]?.completed).length + schedToday.filter(s => progress[s.voucher_number]?.completed).length} total={Math.max(1, sprintToday.length + schedToday.length)} label={`Today: ${sprintToday.filter(s => progress[s.voucher_number]?.completed).length + schedToday.filter(s => progress[s.voucher_number]?.completed).length}/${sprintToday.length + schedToday.length} done`} />
+        </div>
       </div>
 
       <div style={{ marginBottom: 12 }}><SyncStatus {...syncState} /></div>
@@ -434,28 +437,21 @@ function EscalatedList({ sessions, progress, onComplete }) {
 function QuickActions({ sessions, progress, notes, onComplete, onNote }) {
   const pendingActions = sessions.filter(s => {
     if (progress[s.voucher_number]?.completed) return false
-    const note = notes[s.voucher_number]?.note || ''
-    const hasPending = note.toLowerCase().includes('pending') || note.toLowerCase().includes('no answer') || note.toLowerCase().includes('voicemail') || note.toLowerCase().includes('left vm')
-    return hasPending || s.is_overdue
+    const note = (notes[s.voucher_number]?.note || '').toLowerCase()
+    return note.includes('pending to review') || note.includes('pending to call')
   }).sort((a, b) => {
-    const aNote = notes[a.voucher_number]?.note || ''
-    const bNote = notes[b.voucher_number]?.note || ''
-    const aPending = aNote.toLowerCase().includes('pending') ? 1 : 0
-    const bPending = bNote.toLowerCase().includes('pending') ? 1 : 0
-    if (aPending !== bPending) return bPending - aPending
     return (a.next_call_date || '').localeCompare(b.next_call_date || '')
   })
 
   if (pendingActions.length === 0) {
-    return <div style={{ textAlign: 'center', padding: 32, color: 'var(--text3)', fontSize: 13 }}>✅ No pending actions — all caught up!</div>
+    return <div style={{ textAlign: 'center', padding: 32, color: 'var(--text3)', fontSize: 13 }}>✅ No pending to review/call — all caught up!</div>
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {pendingActions.slice(0, 50).map((s, i) => {
+      {pendingActions.map((s, i) => {
         const vNum = s.voucher_number.replace('VOU', '')
         const note = notes[s.voucher_number]?.note || ''
-        const hasNote = !!note
         return (
           <div key={s.voucher_number} style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 'var(--r)',
@@ -464,11 +460,9 @@ function QuickActions({ sessions, progress, notes, onComplete, onNote }) {
             <span style={{ fontSize: 10, color: 'var(--text3)', minWidth: 20 }}>{i + 1}</span>
             <VoucherLink voucher={s.voucher_number} />
             <StatusBadge status={s.status} />
-            {hasNote && (
-              <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'var(--amber-bg)', color: 'var(--amber-t)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                📝 {note}
-              </span>
-            )}
+            <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'var(--amber-bg)', color: 'var(--amber-t)', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              📝 {note}
+            </span>
             <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 'auto' }}>{fmtDate(s.next_call_date)}</span>
             <div style={{ display: 'flex', gap: 4 }}>
               <button onClick={() => onNote(s.voucher_number)} style={{ padding: '3px 8px', fontSize: 10, borderRadius: 'var(--r)', border: '1px solid var(--border2)', background: 'var(--bg4)', color: 'var(--text2)', cursor: 'pointer' }}>📝 Note</button>
@@ -477,7 +471,6 @@ function QuickActions({ sessions, progress, notes, onComplete, onNote }) {
           </div>
         )
       })}
-      {pendingActions.length > 50 && <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center', padding: 8 }}>Showing first 50 of {pendingActions.length}</div>}
     </div>
   )
 }
