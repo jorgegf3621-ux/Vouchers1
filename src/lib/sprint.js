@@ -145,3 +145,48 @@ export function fmtDate(iso) {
   if (!iso) return '—'
   try { return format(parseISO(iso), 'MMM d, yyyy') } catch { return iso }
 }
+
+// ── Auto-schedule: suggest next call date based on outcome ──
+export function suggestNextDate(currentDate, outcome, dynCal = {}) {
+  // outcome: 'contacted' | 'no_answer' | 'left_vm' | 'pending_review' | 'filed'
+  let baseDays = 7 // default: contacted = 7 business days
+  if (outcome === 'no_answer' || outcome === 'left_vm') baseDays = 5
+  if (outcome === 'pending_review') baseDays = 3
+  if (outcome === 'filed') baseDays = 30
+
+  let d = new Date(currentDate ? currentDate + 'T12:00' : TODAY)
+  let added = 0
+  while (added < baseDays) {
+    d = addDays(d, 1)
+    if (!isWeekend(d)) added++
+  }
+
+  // Check saturation: if ≥12 calls, push 1-2 more business days
+  let attempts = 0
+  while (attempts < 3) {
+    const key = format(d, 'yyyy-MM-dd')
+    const load = (dynCal[key]?.count || 0)
+    if (load >= 12) {
+      d = addDays(d, 1)
+      if (isWeekend(d)) d = addDays(d, 1)
+      attempts++
+    } else break
+  }
+
+  return format(d, 'yyyy-MM-dd')
+}
+
+// ── Weekly Streak: consecutive days meeting daily quota ──
+export function calcWeeklyStreak(progress, dailyQuota = 15) {
+  const today = new Date()
+  let streak = 0
+  for (let i = 0; i < 30; i++) {
+    const d = addDays(today, -i)
+    const key = format(d, 'yyyy-MM-dd')
+    if (isWeekend(d)) continue
+    const completed = Object.values(progress).filter(p => p.completed_at && p.completed_at.startsWith(key)).length
+    if (completed >= dailyQuota) streak++
+    else break
+  }
+  return streak
+}

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useSpecialistData } from '../hooks/useData'
-import { buildSprintPlan, detectSnowball, CAP_DAY, TODAY_ISO, fmtDate, priorityOrder } from '../lib/sprint'
+import { buildSprintPlan, detectSnowball, calcWeeklyStreak, CAP_DAY, TODAY_ISO, fmtDate, priorityOrder } from '../lib/sprint'
 import { Card, Tabs, Alert, StatCard, SyncStatus, ProgressBar, StatusBadge } from '../components/ui'
 import { VoucherLink, StatusSelect } from '../components/SessionsTable'
 import { CompleteModal, NoteModal } from '../components/SessionModals'
@@ -22,6 +22,7 @@ const TABS = [
   { key: 'queue', icon: '📞', label: "Today's Queue" },
   { key: 'schedule', icon: '📅', label: 'Schedule' },
   { key: 'escalated', icon: '⚡', label: 'Escalated' },
+  { key: 'quick', icon: '⚙️', label: 'Quick Actions' },
   { key: 'list', icon: '📋', label: 'All Sessions' },
   { key: 'before', icon: '📅', label: 'Before' },
   { key: 'after', icon: '✓', label: 'After' },
@@ -129,6 +130,7 @@ function SpecialistView({ name }) {
 
   const overdueLeft = overdue.filter(s => !progress[s.voucher_number]?.completed).length
   const totalDone = Object.values(progress).filter(p => p.completed).length
+  const weeklyStreak = calcWeeklyStreak(progress, CAP_DAY)
   const sprintToday = sessionsWithCallDay.filter(s => s.call_day === TODAY_ISO && !progress[s.voucher_number]?.completed)
   const schedToday = sessionsWithCallDay.filter(s => !s.is_overdue && s.next_call_date === TODAY_ISO && !progress[s.voucher_number]?.completed)
 
@@ -195,6 +197,7 @@ function SpecialistView({ name }) {
           <StatCard label="Due Today" value={Math.min(sprintToday.length + schedToday.length, CAP_DAY)} variant="warn" />
           <StatCard label="Done" value={totalDone} variant="good" />
           <StatCard label="Total" value={sessions.length} />
+          {weeklyStreak > 0 && <div style={{ padding: '4px 10px', borderRadius: 'var(--r)', background: 'var(--green-bg)', border: '1px solid rgba(61,214,140,.3)', fontSize: 11, fontWeight: 700, color: 'var(--green-t)' }}>🔥 {weeklyStreak}d streak</div>}
           <Link to="/" style={{ fontSize: 11, color: 'var(--text3)', textDecoration: 'none', padding: '4px 8px', borderRadius: 'var(--r)', background: 'var(--bg3)' }}>🏠 Dashboard</Link>
         </div>
       </div>
@@ -269,6 +272,19 @@ function SpecialistView({ name }) {
           <EscalatedList sessions={sessions} progress={progress} onComplete={handleComplete} />
         </Card>
       )}
+
+      {/* QUICK ACTIONS */}
+      {tab === 'quick' && (
+        <Card>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 16 }}>⚙️</span>
+            <span>Quick Actions</span>
+            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 3, background: 'var(--bg4)', color: 'var(--text3)' }}>Pending follow-ups</span>
+          </div>
+          <QuickActions sessions={sessions} progress={progress} notes={notes} onComplete={handleComplete} onNote={v => setNoteModal({ voucher: v })} />
+        </Card>
+      )}
+
       {tab === 'list' && (
         <Card>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
@@ -408,6 +424,57 @@ function EscalatedList({ sessions, progress, onComplete }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function QuickActions({ sessions, progress, notes, onComplete, onNote }) {
+  const pendingActions = sessions.filter(s => {
+    if (progress[s.voucher_number]?.completed) return false
+    const note = notes[s.voucher_number]?.note || ''
+    const hasPending = note.toLowerCase().includes('pending') || note.toLowerCase().includes('no answer') || note.toLowerCase().includes('voicemail') || note.toLowerCase().includes('left vm')
+    return hasPending || s.is_overdue
+  }).sort((a, b) => {
+    const aNote = notes[a.voucher_number]?.note || ''
+    const bNote = notes[b.voucher_number]?.note || ''
+    const aPending = aNote.toLowerCase().includes('pending') ? 1 : 0
+    const bPending = bNote.toLowerCase().includes('pending') ? 1 : 0
+    if (aPending !== bPending) return bPending - aPending
+    return (a.next_call_date || '').localeCompare(b.next_call_date || '')
+  })
+
+  if (pendingActions.length === 0) {
+    return <div style={{ textAlign: 'center', padding: 32, color: 'var(--text3)', fontSize: 13 }}>✅ No pending actions — all caught up!</div>
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {pendingActions.slice(0, 50).map((s, i) => {
+        const vNum = s.voucher_number.replace('VOU', '')
+        const note = notes[s.voucher_number]?.note || ''
+        const hasNote = !!note
+        return (
+          <div key={s.voucher_number} style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 'var(--r)',
+            border: '1px solid var(--border)', background: 'var(--bg3)',
+          }}>
+            <span style={{ fontSize: 10, color: 'var(--text3)', minWidth: 20 }}>{i + 1}</span>
+            <VoucherLink voucher={s.voucher_number} />
+            <StatusBadge status={s.status} />
+            {hasNote && (
+              <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'var(--amber-bg)', color: 'var(--amber-t)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                📝 {note}
+              </span>
+            )}
+            <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 'auto' }}>{fmtDate(s.next_call_date)}</span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button onClick={() => onNote(s.voucher_number)} style={{ padding: '3px 8px', fontSize: 10, borderRadius: 'var(--r)', border: '1px solid var(--border2)', background: 'var(--bg4)', color: 'var(--text2)', cursor: 'pointer' }}>📝 Note</button>
+              <button onClick={() => onComplete(s.voucher_number, s.next_call_date)} style={{ padding: '3px 8px', fontSize: 10, borderRadius: 'var(--r)', border: 'none', background: 'var(--green)', color: '#0f1117', cursor: 'pointer', fontWeight: 600 }}>✓ Done</button>
+            </div>
+          </div>
+        )
+      })}
+      {pendingActions.length > 50 && <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center', padding: 8 }}>Showing first 50 of {pendingActions.length}</div>}
     </div>
   )
 }
