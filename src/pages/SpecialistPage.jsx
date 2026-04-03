@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useSpecialistData } from '../hooks/useData'
 import { buildSprintPlan, detectSnowball, CAP_DAY, TODAY_ISO, fmtDate, priorityOrder } from '../lib/sprint'
@@ -7,7 +7,7 @@ import { VoucherLink, StatusSelect } from '../components/SessionsTable'
 import { CompleteModal, NoteModal } from '../components/SessionModals'
 import SprintPlan from '../components/SprintPlan'
 import Calendar from '../components/Calendar'
-import { useMemo, useState } from 'react'
+import DailyScheduler from '../components/DailyScheduler'
 
 const SPECIALIST_MAP = {
   'alejandro-guerrero': 'Alejandro Guerrero',
@@ -20,6 +20,8 @@ const SPECIALIST_MAP = {
 
 const TABS = [
   { key: 'queue', icon: '📞', label: "Today's Queue" },
+  { key: 'schedule', icon: '📅', label: 'Schedule' },
+  { key: 'escalated', icon: '⚡', label: 'Escalated' },
   { key: 'list', icon: '📋', label: 'All Sessions' },
   { key: 'before', icon: '📅', label: 'Before' },
   { key: 'after', icon: '✓', label: 'After' },
@@ -226,7 +228,27 @@ function SpecialistView({ name }) {
         </Card>
       )}
 
-      {/* ALL SESSIONS */}
+      {/* SCHEDULE */}
+      {tab === 'schedule' && (
+        <Card>
+          <DailyScheduler sessions={sessions} progress={progress} onComplete={handleComplete} />
+        </Card>
+      )}
+
+      {/* ESCALATED / RUSHED */}
+      {tab === 'escalated' && (
+        <Card>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 16 }}>⚡</span>
+            <span>Escalated & Rushed Cases</span>
+            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 3, background: 'var(--red-bg)', color: 'var(--red-t)' }}>Priority</span>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>
+            Cases flagged as escalated or rushed require immediate attention.
+          </div>
+          <EscalatedList sessions={sessions} progress={progress} onComplete={handleComplete} />
+        </Card>
+      )}
       {tab === 'list' && (
         <Card>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
@@ -309,6 +331,43 @@ function QueueSection({ label, items, progress, borderColor, onComplete }) {
             <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 3, background: 'var(--bg4)', color: stColors[s.status] || 'var(--text2)' }}>{s.status}</span>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 11, color: 'var(--text3)' }}>{fmtDate(s.next_call_date)}</span>
+              <button onClick={() => onComplete(s.voucher_number, s.next_call_date)} style={{
+                width: 24, height: 24, borderRadius: 5, border: isDone ? 'none' : '1.5px solid var(--border2)',
+                background: isDone ? 'var(--green)' : 'var(--bg4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {isDone && <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#0f1117" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function EscalatedList({ sessions, progress, onComplete }) {
+  const escalated = sessions.filter(s => s.is_overdue && !progress[s.voucher_number]?.completed)
+    .sort((a, b) => (a.next_call_date || '').localeCompare(b.next_call_date || ''))
+
+  if (escalated.length === 0) {
+    return <div style={{ textAlign: 'center', padding: 32, color: 'var(--text3)', fontSize: 13 }}>✅ No escalated cases — all overdue sessions completed!</div>
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {escalated.map((s, i) => {
+        const isDone = !!progress[s.voucher_number]?.completed
+        const vNum = s.voucher_number.replace('VOU', '')
+        return (
+          <div key={s.voucher_number} style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 'var(--r)',
+            border: '1px solid var(--border)', borderLeft: `3px solid var(--red-t)`, background: 'var(--bg3)', opacity: isDone ? 0.38 : 1,
+          }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--red-t)', minWidth: 20 }}>⚡{i + 1}</span>
+            <a href={`https://geminiduplication.com/vouchers/session/${vNum}`} target="_blank" rel="noreferrer" style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: 'var(--blue-t)' }}>{vNum}</a>
+            <StatusBadge status={s.status} />
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>{fmtDate(s.next_call_date)}</span>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               <button onClick={() => onComplete(s.voucher_number, s.next_call_date)} style={{
                 width: 24, height: 24, borderRadius: 5, border: isDone ? 'none' : '1.5px solid var(--border2)',
                 background: isDone ? 'var(--green)' : 'var(--bg4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
