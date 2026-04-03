@@ -346,11 +346,15 @@ function QueueSection({ label, items, progress, borderColor, onComplete }) {
 }
 
 function EscalatedList({ sessions, progress, onComplete }) {
-  const escalated = sessions.filter(s => s.is_overdue && !progress[s.voucher_number]?.completed)
-    .sort((a, b) => (a.next_call_date || '').localeCompare(b.next_call_date || ''))
+  const escalated = sessions.filter(s => (s.escalated || s.rushed) && !progress[s.voucher_number]?.completed)
+    .sort((a, b) => {
+      if (a.escalated && !b.escalated) return -1
+      if (!a.escalated && b.escalated) return 1
+      return (a.next_call_date || '').localeCompare(b.next_call_date || '')
+    })
 
   if (escalated.length === 0) {
-    return <div style={{ textAlign: 'center', padding: 32, color: 'var(--text3)', fontSize: 13 }}>✅ No escalated cases — all overdue sessions completed!</div>
+    return <div style={{ textAlign: 'center', padding: 32, color: 'var(--text3)', fontSize: 13 }}>✅ No escalated or rushed cases!</div>
   }
 
   return (
@@ -358,14 +362,20 @@ function EscalatedList({ sessions, progress, onComplete }) {
       {escalated.map((s, i) => {
         const isDone = !!progress[s.voucher_number]?.completed
         const vNum = s.voucher_number.replace('VOU', '')
+        const tags = []
+        if (s.escalated) tags.push({ label: 'ESCALATED', color: 'var(--red-t)', bg: 'var(--red-bg)' })
+        if (s.rushed) tags.push({ label: 'RUSHED', color: 'var(--amber-t)', bg: 'var(--amber-bg)' })
         return (
           <div key={s.voucher_number} style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 'var(--r)',
-            border: '1px solid var(--border)', borderLeft: `3px solid var(--red-t)`, background: 'var(--bg3)', opacity: isDone ? 0.38 : 1,
+            border: '1px solid var(--border)', borderLeft: `3px solid ${s.escalated ? 'var(--red-t)' : 'var(--amber-t)'}`, background: 'var(--bg3)', opacity: isDone ? 0.38 : 1,
           }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--red-t)', minWidth: 20 }}>⚡{i + 1}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: s.escalated ? 'var(--red-t)' : 'var(--amber-t)', minWidth: 20 }}>⚡{i + 1}</span>
             <a href={`https://geminiduplication.com/vouchers/session/${vNum}`} target="_blank" rel="noreferrer" style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: 'var(--blue-t)' }}>{vNum}</a>
             <StatusBadge status={s.status} />
+            {tags.map((t, j) => (
+              <span key={j} style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: t.bg, color: t.color, letterSpacing: '.5px' }}>{t.label}</span>
+            ))}
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>{fmtDate(s.next_call_date)}</span>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               <button onClick={() => onComplete(s.voucher_number, s.next_call_date)} style={{
