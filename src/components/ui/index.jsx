@@ -6,6 +6,7 @@ export function Badge({ variant = 'default', children, style }) {
     contacted: { background: 'var(--green-bg)', color: 'var(--green-t)', border: '1px solid rgba(61,214,140,0.2)' },
     processing: { background: 'var(--blue-bg)', color: 'var(--blue-t)', border: '1px solid rgba(79,142,247,0.2)' },
     pending: { background: 'var(--amber-bg)', color: 'var(--amber-t)', border: '1px solid rgba(245,166,35,0.2)' },
+    filed: { background: 'var(--red-bg)', color: 'var(--red-t)', border: '1px solid rgba(242,92,110,0.2)' },
     overdue: { background: 'var(--red-bg)', color: 'var(--red-t)', border: '1px solid rgba(242,92,110,0.2)' },
     done: { background: 'var(--green-bg)', color: 'var(--green-t)', border: '1px solid rgba(61,214,140,0.2)' },
     default: { background: 'var(--bg4)', color: 'var(--text2)', border: '1px solid var(--border)' },
@@ -22,7 +23,7 @@ export function Badge({ variant = 'default', children, style }) {
 }
 
 export function StatusBadge({ status }) {
-  const v = status === 'Contacted' ? 'contacted' : status === 'Processing' ? 'processing' : 'pending'
+  const v = status === 'Contacted' ? 'contacted' : status === 'Processing' ? 'processing' : status === 'Filed' ? 'filed' : 'pending'
   return <Badge variant={v}>{status}</Badge>
 }
 

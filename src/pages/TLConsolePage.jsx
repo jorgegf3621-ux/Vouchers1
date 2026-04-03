@@ -63,6 +63,8 @@ export default function TLConsolePage() {
 
     const records = parsedRows.map(r => {
       const nd = parseCSVDate(r['Next Call'])
+      const status = r['Status'] || 'Contacted'
+      const isOverdueStatus = ['Pending', 'Contacted', 'Filed'].includes(status)
       return {
         voucher_number: r['Voucher Number'],
         case_number: r['Case Number'] || null,
@@ -70,9 +72,9 @@ export default function TLConsolePage() {
         case_specialist: r['Case Specialist'] || 'Unknown',
         billing_entity: r['Billing Entity'] || null,
         account: r['Account'] || null,
-        status: r['Status'] || 'Contacted',
+        status,
         next_call_date: nd,
-        is_overdue: nd ? nd <= TODAY_ISO : false,
+        is_overdue: isOverdueStatus && nd ? nd <= TODAY_ISO : false,
         source_file: r['_file'],
         import_batch: batchId,
         updated_at: new Date().toISOString(),
@@ -105,7 +107,8 @@ export default function TLConsolePage() {
   const specialists = useMemo(() => [...new Set(sessions.map(s => s.case_specialist))].sort(), [sessions])
   const specStats = useMemo(() => specialists.map(spec => {
     const mine = sessions.filter(s => s.case_specialist === spec)
-    const ov = mine.filter(s => s.is_overdue)
+    // Backlog solo cuenta Pending y Contacted (Filed no afecta el total)
+    const ov = mine.filter(s => s.is_overdue && s.status !== 'Filed')
     const done = ov.filter(s => progress[s.voucher_number]?.completed).length
     const left = ov.length - done
     const pct = ov.length ? Math.round(done / ov.length * 100) : 100
@@ -121,7 +124,7 @@ export default function TLConsolePage() {
       else if (left > 15) as.push({ v: 'amber', i: '⚠', title: `${spec} — Backlog warning (${left})`, body: 'Approaching threshold.' })
     })
     const totalLeft = specStats.reduce((s, { left }) => s + left, 0)
-    if (totalLeft === 0 && sessions.some(s => s.is_overdue)) as.unshift({ v: 'green', i: '✅', title: 'All backlogs cleared!', body: 'All specialists are on track.' })
+    if (totalLeft === 0 && sessions.some(s => s.is_overdue && s.status !== 'Filed')) as.unshift({ v: 'green', i: '✅', title: 'All backlogs cleared!', body: 'All specialists are on track.' })
     return as
   }, [specStats, sessions])
 
@@ -409,7 +412,7 @@ export default function TLConsolePage() {
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
               style={{ padding: '6px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 12, outline: 'none' }}>
               <option value="">All Status</option>
-              <option>Contacted</option><option>Processing</option><option>Pending</option>
+              <option>Contacted</option><option>Processing</option><option>Pending</option><option>Filed</option>
             </select>
             <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 'auto' }}>{filteredSessions.length} sessions</span>
           </div>

@@ -17,6 +17,7 @@ export function StatusSelect({ value, onChange }) {
     Contacted: { background: 'var(--green-bg)', color: 'var(--green-t)', border: '1px solid rgba(61,214,140,.2)' },
     Processing: { background: 'var(--blue-bg)', color: 'var(--blue-t)', border: '1px solid rgba(79,142,247,.2)' },
     Pending: { background: 'var(--amber-bg)', color: 'var(--amber-t)', border: '1px solid rgba(245,166,35,.2)' },
+    Filed: { background: 'var(--red-bg)', color: 'var(--red-t)', border: '1px solid rgba(242,92,110,.2)' },
   }
   return (
     <select value={value} onChange={e => onChange(e.target.value)}
@@ -27,6 +28,7 @@ export function StatusSelect({ value, onChange }) {
       <option>Contacted</option>
       <option>Processing</option>
       <option>Pending</option>
+      <option>Filed</option>
     </select>
   )
 }
