@@ -92,15 +92,16 @@ export function detectSnowball(dynCal) {
     .map(([d]) => d)
     .sort()
 
-  if (hotDays.length < 3) return false
+  if (hotDays.length < 3) return null
 
-  let consec = 1, max = 1
+  let consec = 1, max = 1, maxStart = 0, maxEnd = 0
+  let curStart = 0
   for (let i = 1; i < hotDays.length; i++) {
     const diff = (new Date(hotDays[i] + 'T12:00') - new Date(hotDays[i - 1] + 'T12:00')) / 86400000
-    if (diff <= 3) { consec++; max = Math.max(max, consec) }
-    else consec = 1
+    if (diff <= 3) { consec++; if (consec > max) { max = consec; maxStart = curStart; maxEnd = i } }
+    else { consec = 1; curStart = i }
   }
-  return max >= 3 ? max : false
+  return max >= 3 ? { count: max, days: hotDays.slice(maxStart, maxEnd + 1) } : null
 }
 
 export function parseCSVDate(raw) {

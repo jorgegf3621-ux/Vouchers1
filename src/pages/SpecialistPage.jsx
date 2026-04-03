@@ -68,6 +68,7 @@ function SpecialistView({ name }) {
   const [search, setSearch] = useState('')
   const [completeModal, setCompleteModal] = useState(null)
   const [noteModal, setNoteModal] = useState(null)
+  const [snowballDays, setSnowballDays] = useState([]) // Highlighted days from snowball alert
 
   const overdue = useMemo(() => sessions.filter(s => s.is_overdue), [sessions])
   const future = useMemo(() => sessions.filter(s => !s.is_overdue), [sessions])
@@ -137,7 +138,10 @@ function SpecialistView({ name }) {
     else if (overdueLeft > 0) as.push({ v: 'amber', i: '⚠', title: `${overdueLeft} overdue sessions remaining`, body: 'Keep working through the daily queue.' })
     else if (overdue.length > 0) as.push({ v: 'green', i: '✅', title: 'Backlog cleared!', body: 'All overdue sessions completed.' })
     const snowball = detectSnowball(dynCal)
-    if (snowball) as.push({ v: 'red', i: '📈', title: `Snowball detected — ${snowball} consecutive heavy days`, body: 'Redistribute sessions now before it compounds.' })
+    if (snowball) {
+      const dateStr = snowball.days.map(d => fmtDate(d)).join(', ')
+      as.push({ v: 'red', i: '📈', title: `Snowball — ${snowball.count} consecutive heavy days`, body: `${dateStr}. Redistribute sessions now.`, clickable: true })
+    }
     const sat = Object.entries(dynCal).filter(([, e]) => (e.count || 0) >= 15 && e.type !== 'action')
     if (sat.length) as.push({ v: 'red', i: '⛔', title: `${sat.length} saturated day${sat.length > 1 ? 's' : ''} — 15+ calls`, body: sat.slice(0, 3).map(([d, e]) => `${d} (${e.count})`).join(', ') })
     return as
@@ -188,7 +192,12 @@ function SpecialistView({ name }) {
 
       {alerts.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-          {alerts.map((a, i) => <Alert key={i} variant={a.v} icon={a.i} title={a.title}>{a.body}</Alert>)}
+          {alerts.map((a, i) => (
+            <div key={i} onClick={() => { if (a.clickable) { setTab('before'); const sb = detectSnowball(dynCal); if (sb) setSnowballDays(sb.days) } }}
+              style={a.clickable ? { cursor: 'pointer' } : {}}>
+              <Alert variant={a.v} icon={a.i} title={a.title}>{a.body}{a.clickable && ' (click to view)'}</Alert>
+            </div>
+          ))}
         </div>
       )}
 
@@ -271,7 +280,7 @@ function SpecialistView({ name }) {
       {tab === 'before' && (
         <Card>
           <div style={{ fontSize: 13, fontWeight: 700, padding: '8px 14px', borderRadius: 'var(--r)', marginBottom: 14, background: 'var(--red-bg)', color: 'var(--red-t)', border: '1px solid rgba(242,92,110,.25)' }}>⚠ Current State — Before Plan</div>
-          <Calendar data={beforeCal} mode="before" legend={BEFORE_CAL_LEGEND} />
+          <Calendar data={beforeCal} mode="before" legend={BEFORE_CAL_LEGEND} highlightDays={snowballDays} />
         </Card>
       )}
 

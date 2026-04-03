@@ -31,7 +31,7 @@ function getCellBgAfter(entry) {
   return {}
 }
 
-export default function Calendar({ data, mode, title, legend }) {
+export default function Calendar({ data, mode, title, legend, highlightDays = [] }) {
   // Find all months with data
   const allMonths = useMemo(() => {
     const keys = Object.keys(data)
@@ -106,11 +106,13 @@ export default function Calendar({ data, mode, title, legend }) {
           const entry = data[key]
           const cnt = mode === 'before' ? (entry || 0) : (entry?.count || 0)
 
+          const isHighlighted = highlightDays.includes(key)
           const cellStyle = {
-            minHeight: 58, borderRadius: 7, border: isToday ? '2px solid var(--blue)' : '1px solid var(--border)',
+            minHeight: 58, borderRadius: 7,
+            border: isToday ? '2px solid var(--blue)' : isHighlighted ? '2px solid var(--red-t)' : '1px solid var(--border)',
             padding: 5, display: 'flex', flexDirection: 'column', gap: 2,
-            background: 'var(--bg2)',
-            ...(mode === 'after' ? getCellBgAfter(entry) : cnt > 0 ? { background: 'var(--bg3)' } : {}),
+            background: isHighlighted ? 'rgba(242,92,110,.08)' : 'var(--bg2)',
+            ...(mode === 'after' ? getCellBgAfter(entry) : cnt > 0 && !isHighlighted ? { background: 'var(--bg3)' } : {}),
           }
 
           const badge = mode === 'before'
