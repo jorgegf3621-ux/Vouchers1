@@ -1,5 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { format } from 'date-fns'
+
+const TODAY_ISO = format(new Date(), 'yyyy-MM-dd')
+const OVERDUE_STATUSES = ['Pending', 'Contacted', 'Filed']
+
+function computeIsOverdue(session) {
+  if (!session.next_call_date) return false
+  if (!OVERDUE_STATUSES.includes(session.status)) return false
+  return session.next_call_date <= TODAY_ISO
+}
 
 export function useTLData() {
   const [sessions, setSessions] = useState([])
@@ -12,11 +22,16 @@ export function useTLData() {
     setLoading(true)
     try {
       const [sessRes, progRes] = await Promise.all([
-        supabase.from('voucher_sessions').select('voucher_number,case_specialist,status,next_call_date,is_overdue').order('next_call_date').limit(2000),
+        supabase.from('voucher_sessions').select('voucher_number,case_specialist,status,next_call_date').order('next_call_date').limit(2000),
         supabase.from('voucher_progress').select('voucher_number,completed,new_call_date,completed_at').limit(2000),
       ])
       if (sessRes.error) throw sessRes.error
-      setSessions(sessRes.data || [])
+      // Compute is_overdue dynamically based on current date and status
+      const computed = (sessRes.data || []).map(s => ({
+        ...s,
+        is_overdue: computeIsOverdue(s),
+      }))
+      setSessions(computed)
       const pm = {}; (progRes.data || []).forEach(p => { pm[p.voucher_number] = p }); setProgress(pm)
       setConnected(true)
       setError(null)
