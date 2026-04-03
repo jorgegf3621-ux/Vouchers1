@@ -11,15 +11,13 @@ const SPECIALISTS = [
   { key: 'luis-gallegos', name: 'Luis Gallegos' },
 ]
 
-const BASE_URL = window.location.origin
-
 function Sidebar() {
   const loc = useLocation()
   const isActive = (path) => loc.pathname === path
 
   return (
     <div style={{
-      width: 220, minHeight: '100vh', background: 'var(--bg2)', borderRight: '1px solid var(--border)',
+      width: 200, minHeight: '100vh', background: 'var(--bg2)', borderRight: '1px solid var(--border)',
       padding: '20px 12px', display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0,
       position: 'sticky', top: 0, height: '100vh', overflowY: 'auto',
     }}>
@@ -36,20 +34,6 @@ function Sidebar() {
       {SPECIALISTS.map(s => (
         <NavLink key={s.key} to={`/s/${s.key}`} active={isActive(`/s/${s.key}`)} icon="👤" label={s.name} />
       ))}
-
-      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', padding: '12px 10px 4px', letterSpacing: '.5px', textTransform: 'uppercase' }}>
-        Direct Links
-      </div>
-      <div style={{ padding: '4px 10px' }}>
-        {SPECIALISTS.map(s => (
-          <div key={s.key} style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4, fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>
-            <a href={`${BASE_URL}/s/${s.key}`} target="_blank" rel="noreferrer"
-              style={{ color: 'var(--blue-t)', textDecoration: 'none' }}>
-              /s/{s.key}
-            </a>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
