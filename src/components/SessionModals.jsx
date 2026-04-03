@@ -38,7 +38,8 @@ export function CompleteModal({ open, voucher, currentDate, currentStatus, dynCa
   const applyQuickAction = (action) => {
     setSelectedAction(action)
     setNote(action.note)
-    const suggested = suggestNextDate(currentDate, action.outcome, dynCal)
+    const hasNoAnswer = action.outcome === 'no_answer' || action.outcome === 'left_vm'
+    const suggested = suggestNextDate(currentDate, action.outcome, dynCal, hasNoAnswer)
     setDate(suggested)
   }
 

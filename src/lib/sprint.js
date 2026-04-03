@@ -147,12 +147,17 @@ export function fmtDate(iso) {
 }
 
 // ── Auto-schedule: suggest next call date based on outcome ──
-export function suggestNextDate(currentDate, outcome, dynCal = {}) {
-  // outcome: 'contacted' | 'no_answer' | 'left_vm' | 'pending_review' | 'filed'
-  let baseDays = 7 // default: contacted = 7 business days
-  if (outcome === 'no_answer' || outcome === 'left_vm') baseDays = 5
-  if (outcome === 'pending_review') baseDays = 3
-  if (outcome === 'filed') baseDays = 30
+export function suggestNextDate(currentDate, outcome, dynCal = {}, hasNoAnswer = false) {
+  // Rules:
+  // 1. "No answer" (quick button or template) → 5 business days
+  // 2. Contacted (no no-answer note) → 7 business days
+  // 3. Filed + no no-answer note → 30-45 days
+  // 4. Filed + no-answer note → 5 business days (handled by rule 1)
+  
+  let baseDays = 7 // default: contacted
+  if (hasNoAnswer || outcome === 'no_answer' || outcome === 'left_vm') baseDays = 5
+  else if (outcome === 'filed') baseDays = 30 + Math.floor(Math.random() * 16) // 30-45 days
+  else if (outcome === 'pending_review') baseDays = 3
 
   let d = new Date(currentDate ? currentDate + 'T12:00' : TODAY)
   let added = 0
