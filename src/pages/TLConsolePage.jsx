@@ -269,7 +269,7 @@ function SpecialistView({ name }) {
         currentDate={completeModal?.currentDate}
         currentStatus={completeModal?.currentStatus}
         dynCal={dynCal}
-        onConfirm={(date, status) => {
+        onConfirm={(date, status, note) => {
           if (status !== completeModal.currentStatus) {
             updateStatus(completeModal.voucher, status)
           }
@@ -277,6 +277,9 @@ function SpecialistView({ name }) {
             markComplete(completeModal.voucher, date)
           } else if (status === 'Completed') {
             markComplete(completeModal.voucher, null)
+          }
+          if (note && note.trim()) {
+            saveNote(completeModal.voucher, note.trim())
           }
           setCompleteModal(null)
         }}

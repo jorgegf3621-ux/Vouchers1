@@ -8,12 +8,14 @@ const STATUS_OPTIONS = ['Contacted', 'Processing', 'Filed', 'Completed', 'Cancel
 export function CompleteModal({ open, voucher, currentDate, currentStatus, dynCal, onConfirm, onClose }) {
   const [date, setDate] = useState('')
   const [status, setStatus] = useState(currentStatus || 'Contacted')
+  const [note, setNote] = useState('')
   const today = new Date().toISOString().split('T')[0]
 
   useEffect(() => {
     if (open) {
       setDate('')
       setStatus(currentStatus || 'Contacted')
+      setNote('')
     }
   }, [open, currentStatus])
 
@@ -65,6 +67,22 @@ export function CompleteModal({ open, voucher, currentDate, currentStatus, dynCa
         </Alert>
       )}
 
+      {/* Optional Notes */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 5 }}>📝 Notes (optional)</label>
+        <textarea
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          placeholder="Add notes about this session..."
+          style={{
+            width: '100%', padding: '8px 10px', background: 'var(--bg3)',
+            border: '1px solid var(--border2)', borderRadius: 'var(--r)',
+            color: 'var(--text)', fontSize: 12, outline: 'none', resize: 'vertical', minHeight: 60,
+            fontFamily: 'var(--font-sans)',
+          }}
+        />
+      </div>
+
       {date && !isCompleted && !isCancelled && (
         <>
           {isSaturated && (
@@ -82,7 +100,7 @@ export function CompleteModal({ open, voucher, currentDate, currentStatus, dynCa
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
         <Btn variant="default" onClick={onClose}>Cancel</Btn>
-        <Btn variant="success" onClick={() => onConfirm(date, status)} disabled={(!isCompleted && !isCancelled && !date)}>
+        <Btn variant="success" onClick={() => onConfirm(date, status, note)} disabled={(!isCompleted && !isCancelled && !date)}>
           Confirm
         </Btn>
       </div>
