@@ -396,6 +396,10 @@ export default function TLConsolePage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [viewVouchers, setViewVouchers] = useState(null)
   const [voucherFilter, setVoucherFilter] = useState('All')
+  const [caps, setCaps] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('specialist_caps') || '{}') }
+    catch { return {} }
+  })
 
   const handleFiles = async (files) => {
     const allRows = []; const fileInfos = []
@@ -550,9 +554,24 @@ export default function TLConsolePage() {
                   const isViewing = viewVouchers === spec
                   const openVouchers = (status) => { setViewVouchers(spec); setVoucherFilter(status) }
                   const statusMap = { 'Backlog': 'Backlog', 'Done': 'Done', 'Total': 'All' }
+                  const specCap = caps[spec] || CAP_DAY
+                  const updateCap = (v) => {
+                    const newCaps = { ...caps, [spec]: v }
+                    setCaps(newCaps)
+                    localStorage.setItem('specialist_caps', JSON.stringify(newCaps))
+                  }
                   return (
                   <Card key={spec} style={{ cursor: 'pointer', border: isViewing ? '2px solid var(--blue)' : '1px solid var(--border)' }} onClick={() => openVouchers('All')}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ fontSize: 13, fontWeight: 700 }}>👤 {spec}</span><span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 3, background: left > 25 ? 'var(--red-bg)' : left > 10 ? 'var(--amber-bg)' : 'var(--green-bg)', color: left > 25 ? 'var(--red-t)' : left > 10 ? 'var(--amber-t)' : 'var(--green-t)' }}>{left > 25 ? '⛔' : left > 10 ? '⚠' : '✓'} {left} left</span></div>
+                    
+                    {/* Cap editor */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, padding: '6px 8px', background: 'var(--bg4)', borderRadius: 'var(--r)' }}>
+                      <span style={{ fontSize: 9, color: 'var(--text3)', whiteSpace: 'nowrap' }}>Daily Cap:</span>
+                      <button onClick={(e) => { e.stopPropagation(); updateCap(Math.max(5, specCap - 5)) }} style={{ width: 20, height: 20, borderRadius: 3, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: specCap <= 10 ? 'var(--red-t)' : specCap <= 15 ? 'var(--amber-t)' : 'var(--green-t)', fontFamily: 'var(--font-mono)', minWidth: 24, textAlign: 'center' }}>{specCap}</span>
+                      <button onClick={(e) => { e.stopPropagation(); updateCap(Math.min(50, specCap + 5)) }} style={{ width: 20, height: 20, borderRadius: 3, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                      <span style={{ fontSize: 8, color: 'var(--text3)' }}>calls/day</span>
+                    </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4, marginBottom: 10 }}>{Object.entries(byStatus).map(([st, cnt]) => { const stColors = { Contacted: 'var(--green-t)', Processing: 'var(--blue-t)', Pending: 'var(--amber-t)', Filed: 'var(--red-t)' }; return <div key={st} style={{ textAlign: 'center', background: 'var(--bg4)', borderRadius: 4, padding: '4px 2px', cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); openVouchers(st) }} onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'} onMouseLeave={e => e.currentTarget.style.background = 'var(--bg4)'}><div style={{ fontSize: 12, fontWeight: 700, color: stColors[st], fontFamily: 'var(--font-mono)' }}>{cnt}</div><div style={{ fontSize: 8, color: 'var(--text3)', textTransform: 'uppercase' }}>{st.slice(0, 3)}</div></div> })}</div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 10 }}>{[['Backlog', left, 'var(--red-t)'], ['Done', done, 'var(--green-t)'], ['Total', total, 'var(--text)']].map(([lbl, val, clr]) => <div key={lbl} style={{ textAlign: 'center', background: 'var(--bg3)', borderRadius: 'var(--r)', padding: '6px 4px', cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); openVouchers(statusMap[lbl]) }} onMouseEnter={e => e.currentTarget.style.background = 'var(--bg4)'} onMouseLeave={e => e.currentTarget.style.background = 'var(--bg3)'}><div style={{ fontSize: 16, fontWeight: 700, color: clr, fontFamily: 'var(--font-mono)' }}>{val}</div><div style={{ fontSize: 10, color: 'var(--text3)' }}>{lbl}</div></div>)}</div>
                     <div style={{ height: 5, background: 'var(--bg4)', borderRadius: 3, overflow: 'hidden' }}><div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width .5s' }} /></div>

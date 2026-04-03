@@ -16,12 +16,12 @@ export function getBusinessDays(startDate, count) {
   return days
 }
 
-export function buildSprintPlan(overdueSessions, futureSessions) {
+export function buildSprintPlan(overdueSessions, futureSessions, customCap = CAP_SPRINT) {
   if (overdueSessions.length <= BACKLOG_THRESHOLD) return null
 
   const bizDays = getBusinessDays(TODAY, 60)
 
-  // Assign call days (cap 25/day)
+  // Assign call days (cap = custom or default)
   const callDayLoad = {}
   const callAssignments = {}
   const overdueByDate = [...overdueSessions].sort((a, b) =>
@@ -31,7 +31,7 @@ export function buildSprintPlan(overdueSessions, futureSessions) {
   overdueByDate.forEach(session => {
     for (const d of bizDays) {
       const k = format(d, 'yyyy-MM-dd')
-      if ((callDayLoad[k] || 0) < CAP_SPRINT) {
+      if ((callDayLoad[k] || 0) < customCap) {
         callDayLoad[k] = (callDayLoad[k] || 0) + 1
         callAssignments[session.voucher_number] = k
         break
