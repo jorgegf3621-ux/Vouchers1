@@ -39,7 +39,7 @@ export function useTLData() {
     try {
       // Fetch all sessions with pagination
       const sessRes = await fetchAllRows(
-        supabase.from('voucher_sessions').select('voucher_number,case_specialist,status,next_call_date,escalated,rushed', { count: 'exact' }).order('next_call_date')
+        supabase.from('voucher_sessions').select('voucher_number,case_specialist,status,next_call_date,escalated,rushed,created_at', { count: 'exact' }).order('next_call_date')
       )
       // Fetch all progress with pagination
       const progRes = await fetchAllRows(
@@ -78,7 +78,7 @@ export function useSpecialistData(specialistName) {
     setSyncState({ state: 'load', message: 'Loading from Supabase...' })
     try {
       const [sessRes, progRes, notesRes] = await Promise.all([
-        supabase.from('voucher_sessions').select('voucher_number,case_specialist,status,next_call_date,escalated,rushed').eq('case_specialist', specialistName).order('next_call_date'),
+        supabase.from('voucher_sessions').select('voucher_number,case_specialist,status,next_call_date,escalated,rushed,created_at').eq('case_specialist', specialistName).order('next_call_date'),
         supabase.from('voucher_progress').select('*').eq('case_specialist', specialistName),
         supabase.from('voucher_notes').select('*').eq('case_specialist', specialistName),
       ])

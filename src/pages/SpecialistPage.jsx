@@ -137,6 +137,17 @@ function SpecialistView({ name }) {
     if (overdueLeft > 25) as.push({ v: 'red', i: '⛔', title: `Backlog above threshold — ${overdueLeft} overdue`, body: "Follow the sprint plan. Complete today's queue." })
     else if (overdueLeft > 0) as.push({ v: 'amber', i: '⚠', title: `${overdueLeft} overdue sessions remaining`, body: 'Keep working through the daily queue.' })
     else if (overdue.length > 0) as.push({ v: 'green', i: '✅', title: 'Backlog cleared!', body: 'All overdue sessions completed.' })
+
+    // Daily progress alert
+    const todayCompleted = sessions.filter(s => (progress[s.voucher_number]?.completed_at || '').startsWith(TODAY_ISO)).length
+    const todayScheduled = sprintToday.length + schedToday.length
+    if (todayScheduled > 0) {
+      const pct = Math.round(todayCompleted / todayScheduled * 100)
+      if (pct >= 80) as.push({ v: 'green', i: '🏃', title: `Today's pace — On track (${todayCompleted}/${todayScheduled})`, body: `${pct}% of today's calls completed. Keep it up!` })
+      else if (pct >= 50) as.push({ v: 'amber', i: '⏳', title: `Today's pace — Behind (${todayCompleted}/${todayScheduled})`, body: `${pct}% completed. ${todayScheduled - todayCompleted} calls remaining.` })
+      else if (todayCompleted === 0) as.push({ v: 'red', i: '⚠', title: `Today's pace — Not started (${todayScheduled} scheduled)`, body: 'No calls completed yet today. Get started!' })
+      else as.push({ v: 'red', i: '🔴', title: `Today's pace — Falling behind (${todayCompleted}/${todayScheduled})`, body: `Only ${pct}% done. ${todayScheduled - todayCompleted} calls left.` })
+    }
     const snowball = detectSnowball(dynCal)
     if (snowball) {
       const dateStr = snowball.days.map(d => fmtDate(d)).join(', ')

@@ -406,7 +406,7 @@ export default function TLConsolePage() {
 
   const startImport = async () => {
     if (!parsedRows.length) return; setImporting(true); const log = []; const addLog = (msg, type = 'info') => { log.push({ msg, type, ts: new Date().toLocaleTimeString() }); setImportLog([...log]) }; addLog(`Starting import of ${parsedRows.length} unique records...`)
-    const records = parsedRows.map(r => { const nd = parseCSVDate(r['Next Call']); const status = r['Status'] || 'Contacted'; const escalated = (r['Escalated'] || '').toLowerCase() === 'yes' || (r['Escalated'] || '').toLowerCase() === 'true'; const rushed = (r['Rushed'] || '').toLowerCase() === 'yes' || (r['Rushed'] || '').toLowerCase() === 'true'; return { voucher_number: r['Voucher Number'], case_specialist: r['Case Specialist'] || 'Unknown', status, next_call_date: nd, escalated, rushed, updated_at: new Date().toISOString() } })
+    const records = parsedRows.map(r => { const nd = parseCSVDate(r['Next Call']); const status = r['Status'] || 'Contacted'; const escalated = (r['Escalated'] || '').toLowerCase() === 'yes' || (r['Escalated'] || '').toLowerCase() === 'true'; const rushed = (r['Rushed'] || '').toLowerCase() === 'yes' || (r['Rushed'] || '').toLowerCase() === 'true'; const created = r['Created'] ? parseCSVDate(r['Created']) : null; return { voucher_number: r['Voucher Number'], case_specialist: r['Case Specialist'] || 'Unknown', status, next_call_date: nd, escalated, rushed, created_at: created, updated_at: new Date().toISOString() } })
     const CHUNK = 50; let done = 0, errors = 0
     for (let i = 0; i < records.length; i += CHUNK) { const chunk = records.slice(i, i + CHUNK); const { error } = await supabase.from('voucher_sessions').upsert(chunk, { onConflict: 'voucher_number', ignoreDuplicates: false }); if (error) { errors += chunk.length; addLog(`✗ Error ${i}-${i + CHUNK}: ${error.message}`, 'error') } else { done += chunk.length; addLog(`✓ Imported ${done}/${records.length}`, 'ok') } }
     setImportResult({ done, errors }); addLog(errors === 0 ? `✓ Done! ${done} sessions imported.` : `⚠ Finished with ${errors} errors.`, errors === 0 ? 'ok' : 'warn'); setImporting(false); await reload()
@@ -419,6 +419,30 @@ export default function TLConsolePage() {
   const backlogLeft = overdueSessions.filter(s => !progress[s.voucher_number]?.completed).length
   const completedCount = Object.values(progress).filter(p => p.completed && specSessions.some(s => s.voucher_number === p.voucher_number)).length
   const backlogPct = overdueSessions.length ? Math.round((overdueSessions.length - backlogLeft) / overdueSessions.length * 100) : 100
+
+  // Turn Around Time (TAT) - average days from Created to Completed per specialist
+  const tatStats = useMemo(() => {
+    return specialists.map(spec => {
+      const mine = sessions.filter(s => s.case_specialist === spec)
+      const completed = mine.filter(s => progress[s.voucher_number]?.completed && s.created_at && progress[s.voucher_number]?.completed_at)
+      let avgTat = null
+      if (completed.length > 0) {
+        const totalDays = completed.reduce((sum, s) => {
+          const created = new Date(s.created_at + 'T12:00')
+          const done = new Date((progress[s.voucher_number]?.completed_at || '').split('T')[0] + 'T12:00')
+          return sum + Math.max(0, Math.round((done - created) / 86400000))
+        }, 0)
+        avgTat = Math.round(totalDays / completed.length * 10) / 10
+      }
+      return { spec, avgTat, completedCount: completed.length }
+    })
+  }, [specialists, sessions, progress])
+
+  const overallAvgTat = useMemo(() => {
+    const withTat = tatStats.filter(t => t.avgTat !== null)
+    if (withTat.length === 0) return null
+    return Math.round(withTat.reduce((s, t) => s + t.avgTat, 0) / withTat.length * 10) / 10
+  }, [tatStats])
 
   const statusBreakdown = useMemo(() => { const counts = { Contacted: 0, Processing: 0, Pending: 0, Filed: 0, Other: 0 }; specSessions.forEach(s => { if (counts[s.status] !== undefined) counts[s.status]++; else counts.Other++ }); return counts }, [specSessions])
 
@@ -475,6 +499,26 @@ export default function TLConsolePage() {
 
       {tab === 'dashboard' && (
         <div>
+          {/* TAT Summary - TL Only */}
+          {overallAvgTat !== null && (
+            <Card style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>⏱️ Turn Around Time — Average Days to Complete</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 8 }}>
+                <div style={{ textAlign: 'center', background: 'var(--bg3)', borderRadius: 'var(--r)', padding: '10px 8px' }}>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--blue-t)', fontFamily: 'var(--font-mono)' }}>{overallAvgTat}d</div>
+                  <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>Overall Avg</div>
+                </div>
+                {tatStats.filter(t => t.avgTat !== null).map(t => (
+                  <div key={t.spec} style={{ textAlign: 'center', background: 'var(--bg3)', borderRadius: 'var(--r)', padding: '10px 8px' }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: t.avgTat <= 3 ? 'var(--green-t)' : t.avgTat <= 7 ? 'var(--amber-t)' : 'var(--red-t)', fontFamily: 'var(--font-mono)' }}>{t.avgTat}d</div>
+                    <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>{t.spec.split(' ')[0]}</div>
+                    <div style={{ fontSize: 8, color: 'var(--text3)' }}>{t.completedCount} done</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {filterSpec ? (
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10, marginBottom: 14 }}>
