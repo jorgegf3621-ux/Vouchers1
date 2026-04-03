@@ -1,12 +1,40 @@
-import React, { useState, useMemo } from 'react'
-import { format } from 'date-fns'
+import React from 'react'
+import { useParams, Link } from 'react-router-dom'
 import { useSpecialistData } from '../hooks/useData'
-import { buildSprintPlan, detectSnowball, CAP_DAY, TODAY_ISO, priorityOrder, fmtDate } from '../lib/sprint'
-import { Card, Tabs, Alert, SyncStatus, ProgressBar, Btn, StatCard } from '../components/ui'
+import { buildSprintPlan, detectSnowball, CAP_DAY, TODAY_ISO, fmtDate, priorityOrder } from '../lib/sprint'
+import { Card, Tabs, Alert, StatCard, SyncStatus, ProgressBar, StatusBadge } from '../components/ui'
+import { VoucherLink, StatusSelect } from '../components/SessionsTable'
+import { CompleteModal, NoteModal } from '../components/SessionModals'
 import SprintPlan from '../components/SprintPlan'
 import Calendar from '../components/Calendar'
-import SessionsTable from '../components/SessionsTable'
-import { CompleteModal, NoteModal } from '../components/SessionModals'
+import { useMemo, useState } from 'react'
+
+const SPECIALIST_MAP = {
+  'alejandro-guerrero': 'Alejandro Guerrero',
+  'fidel-sanchez': 'Fidel Sanchez',
+  'jonathan-flores': 'Jonathan Flores',
+  'jose-angel-aleman': 'Jose Angel Aleman',
+  'juno-urdiales': 'Juno Urdiales',
+  'luis-gallegos': 'Luis Gallegos',
+}
+
+const TABS = [
+  { key: 'queue', icon: '📞', label: "Today's Queue" },
+  { key: 'list', icon: '📋', label: 'All Sessions' },
+  { key: 'before', icon: '📅', label: 'Before' },
+  { key: 'after', icon: '✓', label: 'After' },
+]
+
+const FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'overdue', label: 'Overdue' },
+  { key: 'future', label: 'Upcoming' },
+  { key: 'contacted', label: 'Contacted' },
+  { key: 'processing', label: 'Processing' },
+  { key: 'pending', label: 'Pending' },
+  { key: 'filed', label: 'Filed' },
+  { key: 'done', label: 'Done' },
+]
 
 const BEFORE_CAL_LEGEND = [
   { color: '#fce7f3', border: '1px solid #f472b6', label: 'Past due' },
@@ -23,46 +51,37 @@ const AFTER_CAL_LEGEND = [
   { color: 'rgba(155,89,247,.12)', border: '1px solid #a78bfa', label: 'Your scheduled' },
 ]
 
-const TABS = [
-  { key: 'queue', icon: '📞', label: "Today's Queue" },
-  { key: 'list', icon: '📋', label: 'All Sessions' },
-  { key: 'before', icon: '📅', label: 'Before' },
-  { key: 'after', icon: '✓', label: 'After' },
-]
+export default function SpecialistPage() {
+  const { key } = useParams()
+  const name = SPECIALIST_MAP[key]
+  if (!name) return <div style={{ padding: 32, color: 'var(--text3)', textAlign: 'center' }}>Specialist not found</div>
 
-const FILTERS = [
-  { key: 'all', label: 'All' },
-  { key: 'overdue', label: 'Overdue' },
-  { key: 'future', label: 'Upcoming' },
-  { key: 'contacted', label: 'Contacted' },
-  { key: 'processing', label: 'Processing' },
-  { key: 'pending', label: 'Pending' },
-  { key: 'done', label: 'Done' },
-]
+  return <SpecialistView name={name} />
+}
 
-export default function SpecialistPage({ name }) {
-  const { sessions, progress, notes, syncState, markComplete, undoComplete, updateStatus, saveNote, deleteNote } = useSpecialistData(name)
+function SpecialistView({ name }) {
+  const { sessions, progress, notes, syncState, markComplete, undoComplete, updateStatus, saveNote, deleteNote, reload } = useSpecialistData(name)
   const [tab, setTab] = useState('queue')
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
-  const [completeModal, setCompleteModal] = useState(null) // { voucher, currentDate }
-  const [noteModal, setNoteModal] = useState(null) // { voucher }
+  const [completeModal, setCompleteModal] = useState(null)
+  const [noteModal, setNoteModal] = useState(null)
 
-  // Derived data
   const overdue = useMemo(() => sessions.filter(s => s.is_overdue), [sessions])
   const future = useMemo(() => sessions.filter(s => !s.is_overdue), [sessions])
   const sprint = useMemo(() => buildSprintPlan(overdue, future), [overdue, future])
 
-  // Before calendar
+  const sessionsWithCallDay = useMemo(() => {
+    if (!sprint) return sessions
+    return sessions.map(s => ({ ...s, call_day: sprint.callAssignments[s.voucher_number] || null }))
+  }, [sessions, sprint])
+
   const beforeCal = useMemo(() => {
     const cal = {}
-    sessions.forEach(s => {
-      if (s.next_call_date) cal[s.next_call_date] = (cal[s.next_call_date] || 0) + 1
-    })
+    sessions.forEach(s => { if (s.next_call_date) cal[s.next_call_date] = (cal[s.next_call_date] || 0) + 1 })
     return cal
   }, [sessions])
 
-  // After calendar base
   const afterCalBase = useMemo(() => {
     if (!sprint) {
       const cal = {}
@@ -76,9 +95,7 @@ export default function SpecialistPage({ name }) {
       return cal
     }
     const cal = {}
-    sprint.callDays.forEach(cd => {
-      cal[cd.date] = { count: cd.count, type: 'action', label: `${cd.count} calls` }
-    })
+    sprint.callDays.forEach(cd => { cal[cd.date] = { count: cd.count, type: 'action', label: `${cd.count} calls` } })
     const futLoad = {}
     future.forEach(s => { if (s.next_call_date) futLoad[s.next_call_date] = (futLoad[s.next_call_date] || 0) + 1 })
     const reschCounts = {}
@@ -89,13 +106,10 @@ export default function SpecialistPage({ name }) {
       const isLast = i === usedDays.length - 1
       cal[d] = { count: total, type: isLast ? 'meta' : 'balanced', label: `${total} calls` }
     })
-    Object.entries(futLoad).forEach(([d, cnt]) => {
-      if (!cal[d]) cal[d] = { count: cnt, type: 'future', label: `${cnt} call${cnt > 1 ? 's' : ''}` }
-    })
+    Object.entries(futLoad).forEach(([d, cnt]) => { if (!cal[d]) cal[d] = { count: cnt, type: 'future', label: `${cnt} call${cnt > 1 ? 's' : ''}` } })
     return cal
   }, [sprint, future])
 
-  // Dynamic after calendar (with user-scheduled dates)
   const dynCal = useMemo(() => {
     const cal = JSON.parse(JSON.stringify(afterCalBase))
     Object.values(progress).forEach(p => {
@@ -104,21 +118,17 @@ export default function SpecialistPage({ name }) {
       if (!cal[d]) cal[d] = { count: 0, type: 'user', label: '0 calls' }
       cal[d].count++
       const cnt = cal[d].count
-      if (cal[d].type !== 'action' && cal[d].type !== 'meta')
-        cal[d].type = cnt >= 15 ? 'critical' : cnt >= 12 ? 'warn' : 'user'
+      if (cal[d].type !== 'action' && cal[d].type !== 'meta') cal[d].type = cnt >= 15 ? 'critical' : cnt >= 12 ? 'warn' : 'user'
       cal[d].label = `${cnt} call${cnt > 1 ? 's' : ''}`
     })
     return cal
   }, [afterCalBase, progress])
 
-  // Stats
   const overdueLeft = overdue.filter(s => !progress[s.voucher_number]?.completed).length
   const totalDone = Object.values(progress).filter(p => p.completed).length
-  const todayQueue = sessions.filter(s => !progress[s.voucher_number]?.completed && (s.next_call_date === TODAY_ISO || s.is_overdue))
-  const sprintToday = sessions.filter(s => s.call_day === TODAY_ISO && !progress[s.voucher_number]?.completed)
-  const schedToday = sessions.filter(s => !s.is_overdue && s.next_call_date === TODAY_ISO && !progress[s.voucher_number]?.completed)
+  const sprintToday = sessionsWithCallDay.filter(s => s.call_day === TODAY_ISO && !progress[s.voucher_number]?.completed)
+  const schedToday = sessionsWithCallDay.filter(s => !s.is_overdue && s.next_call_date === TODAY_ISO && !progress[s.voucher_number]?.completed)
 
-  // Alerts
   const alerts = useMemo(() => {
     const as = []
     if (overdueLeft > 25) as.push({ v: 'red', i: '⛔', title: `Backlog above threshold — ${overdueLeft} overdue`, body: "Follow the sprint plan. Complete today's queue." })
@@ -131,60 +141,57 @@ export default function SpecialistPage({ name }) {
     return as
   }, [overdueLeft, overdue.length, dynCal])
 
-  // Filtered sessions
   const filteredSessions = useMemo(() => {
-    let rows = sessions
-    if (filter === 'overdue') rows = sessions.filter(s => s.is_overdue && !progress[s.voucher_number]?.completed)
-    else if (filter === 'future') rows = sessions.filter(s => !s.is_overdue)
-    else if (filter === 'contacted') rows = sessions.filter(s => s.status === 'Contacted')
-    else if (filter === 'processing') rows = sessions.filter(s => s.status === 'Processing')
-    else if (filter === 'pending') rows = sessions.filter(s => s.status === 'Pending')
-    else if (filter === 'done') rows = sessions.filter(s => !!progress[s.voucher_number]?.completed)
-    if (search) rows = rows.filter(s => s.voucher_number.toLowerCase().includes(search.toLowerCase()) || (s.applicant || '').toLowerCase().includes(search.toLowerCase()))
+    let rows = sessionsWithCallDay
+    if (filter === 'overdue') rows = sessionsWithCallDay.filter(s => s.is_overdue && !progress[s.voucher_number]?.completed)
+    else if (filter === 'future') rows = sessionsWithCallDay.filter(s => !s.is_overdue)
+    else if (filter === 'contacted') rows = sessionsWithCallDay.filter(s => s.status === 'Contacted')
+    else if (filter === 'processing') rows = sessionsWithCallDay.filter(s => s.status === 'Processing')
+    else if (filter === 'pending') rows = sessionsWithCallDay.filter(s => s.status === 'Pending')
+    else if (filter === 'filed') rows = sessionsWithCallDay.filter(s => s.status === 'Filed')
+    else if (filter === 'done') rows = sessionsWithCallDay.filter(s => !!progress[s.voucher_number]?.completed)
+    if (search) rows = rows.filter(s => s.voucher_number.toLowerCase().includes(search.toLowerCase()))
     return rows
-  }, [sessions, filter, search, progress])
+  }, [sessionsWithCallDay, filter, search, progress])
 
   const handleComplete = (voucher, currentDate) => {
     if (progress[voucher]?.completed) { undoComplete(voucher) }
-    else setCompleteModal({ voucher, currentDate })
+    else {
+      const session = sessions.find(s => s.voucher_number === voucher)
+      setCompleteModal({ voucher, currentDate, currentStatus: session?.status || 'Contacted' })
+    }
   }
-
-  const handleNote = (voucher) => setNoteModal({ voucher })
 
   const dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '20px 16px' }}>
-
       {/* Header */}
       <div style={{ background: 'var(--bg2)', borderRadius: 'var(--rl)', border: '1px solid var(--border)', padding: '16px 20px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-        <div style={{ width: 40, height: 40, borderRadius: 'var(--r)', background: 'var(--blue-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>📋</div>
+        <div style={{ width: 40, height: 40, borderRadius: 'var(--r)', background: 'var(--blue-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
         <div>
           <div style={{ fontSize: 16, fontWeight: 700 }}>{name}</div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Voucher Sessions · {dateLabel}</div>
         </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <StatCard label="Backlog" value={overdueLeft} variant="danger" />
           <StatCard label="Due Today" value={Math.min(sprintToday.length + schedToday.length, CAP_DAY)} variant="warn" />
           <StatCard label="Done" value={totalDone} variant="good" />
           <StatCard label="Total" value={sessions.length} />
+          <Link to="/" style={{ fontSize: 11, color: 'var(--text3)', textDecoration: 'none', padding: '4px 8px', borderRadius: 'var(--r)', background: 'var(--bg3)' }}>🏠 Dashboard</Link>
         </div>
       </div>
 
-      {/* Sync */}
       <div style={{ marginBottom: 12 }}><SyncStatus {...syncState} /></div>
 
-      {/* Alerts */}
       {alerts.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
           {alerts.map((a, i) => <Alert key={i} variant={a.v} icon={a.i} title={a.title}>{a.body}</Alert>)}
         </div>
       )}
 
-      {/* Sprint plan */}
       {sprint && <SprintPlan sprint={sprint} />}
 
-      {/* Tabs */}
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
       {/* TODAY QUEUE */}
@@ -207,26 +214,15 @@ export default function SpecialistPage({ name }) {
           </div>
 
           {sprintToday.length === 0 && schedToday.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 32, color: 'var(--text3)', fontSize: 13 }}>
-              🎉 No calls assigned for today! Check back tomorrow.
-            </div>
+            <div style={{ textAlign: 'center', padding: 32, color: 'var(--text3)', fontSize: 13 }}>🎉 No calls assigned for today! Check back tomorrow.</div>
           ) : (
             <>
-              {sprintToday.length > 0 && (
-                <QueueSection label={`Sprint Calls — ${sprintToday.length} assigned for today`} items={sprintToday} progress={progress} borderColor="var(--amber)" onComplete={handleComplete} />
-              )}
-              {schedToday.length > 0 && (
-                <QueueSection label={`Scheduled Today — ${schedToday.length}`} items={schedToday} progress={progress} borderColor="var(--blue)" onComplete={handleComplete} />
-              )}
+              {sprintToday.length > 0 && <QueueSection label={`Sprint Calls — ${sprintToday.length} assigned for today`} items={sprintToday} progress={progress} borderColor="var(--amber)" onComplete={handleComplete} />}
+              {schedToday.length > 0 && <QueueSection label={`Scheduled Today — ${schedToday.length}`} items={schedToday} progress={progress} borderColor="var(--blue)" onComplete={handleComplete} />}
             </>
           )}
 
-          <ProgressBar
-            value={overdue.filter(s => progress[s.voucher_number]?.completed).length}
-            total={overdue.length}
-            label={`${overdue.filter(s => progress[s.voucher_number]?.completed).length} of ${overdue.length} overdue completed`}
-            style={{ marginTop: 16 }}
-          />
+          <ProgressBar value={overdue.filter(s => progress[s.voucher_number]?.completed).length} total={overdue.length} label={`${overdue.filter(s => progress[s.voucher_number]?.completed).length} of ${overdue.length} overdue completed`} style={{ marginTop: 16 }} />
         </Card>
       )}
 
@@ -245,25 +241,14 @@ export default function SpecialistPage({ name }) {
               style={{ padding: '5px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 12, outline: 'none', width: 180 }} />
             <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 'auto' }}>{filteredSessions.length} sessions</span>
           </div>
-
-          <SessionsTable
-            sessions={filteredSessions}
-            progress={progress}
-            notes={notes}
-            dynCal={dynCal}
-            onComplete={handleComplete}
-            onNote={handleNote}
-            onStatusChange={updateStatus}
-          />
+          <SessionsTable sessions={filteredSessions} progress={progress} notes={notes} dynCal={dynCal} onComplete={handleComplete} onNote={v => setNoteModal({ voucher: v })} onStatusChange={updateStatus} />
         </Card>
       )}
 
       {/* BEFORE CALENDAR */}
       {tab === 'before' && (
         <Card>
-          <div style={{ fontSize: 13, fontWeight: 700, padding: '8px 14px', borderRadius: 'var(--r)', marginBottom: 14, background: 'var(--red-bg)', color: 'var(--red-t)', border: '1px solid rgba(242,92,110,.25)' }}>
-            ⚠ Current State — Before Plan
-          </div>
+          <div style={{ fontSize: 13, fontWeight: 700, padding: '8px 14px', borderRadius: 'var(--r)', marginBottom: 14, background: 'var(--red-bg)', color: 'var(--red-t)', border: '1px solid rgba(242,92,110,.25)' }}>⚠ Current State — Before Plan</div>
           <Calendar data={beforeCal} mode="before" legend={BEFORE_CAL_LEGEND} />
         </Card>
       )}
@@ -271,30 +256,31 @@ export default function SpecialistPage({ name }) {
       {/* AFTER CALENDAR */}
       {tab === 'after' && (
         <Card>
-          <div style={{ fontSize: 13, fontWeight: 700, padding: '8px 14px', borderRadius: 'var(--r)', marginBottom: 14, background: 'var(--green-bg)', color: 'var(--green-t)', border: '1px solid rgba(61,214,140,.25)' }}>
-            ✓ After Plan — Live (reflects your scheduled dates)
-          </div>
+          <div style={{ fontSize: 13, fontWeight: 700, padding: '8px 14px', borderRadius: 'var(--r)', marginBottom: 14, background: 'var(--green-bg)', color: 'var(--green-t)', border: '1px solid rgba(61,214,140,.25)' }}>✓ After Plan — Live</div>
           <Calendar data={dynCal} mode="after" legend={AFTER_CAL_LEGEND} />
         </Card>
       )}
 
-      {/* Modals */}
       <CompleteModal
         open={!!completeModal}
         voucher={completeModal?.voucher}
         currentDate={completeModal?.currentDate}
+        currentStatus={completeModal?.currentStatus}
         dynCal={dynCal}
-        onConfirm={date => { markComplete(completeModal.voucher, date); setCompleteModal(null) }}
+        onConfirm={(date, status) => {
+          if (status !== completeModal.currentStatus) {
+            updateStatus(completeModal.voucher, status)
+          }
+          if (date && status !== 'Completed' && status !== 'Cancelled') {
+            markComplete(completeModal.voucher, date)
+          } else if (status === 'Completed') {
+            markComplete(completeModal.voucher, null)
+          }
+          setCompleteModal(null)
+        }}
         onClose={() => setCompleteModal(null)}
       />
-      <NoteModal
-        open={!!noteModal}
-        voucher={noteModal?.voucher}
-        existingNote={notes[noteModal?.voucher]?.note}
-        onSave={text => saveNote(noteModal.voucher, text)}
-        onDelete={() => deleteNote(noteModal.voucher)}
-        onClose={() => setNoteModal(null)}
-      />
+      <NoteModal open={!!noteModal} voucher={noteModal?.voucher} existingNote={notes[noteModal?.voucher]?.note} onSave={text => saveNote(noteModal.voucher, text)} onDelete={() => deleteNote(noteModal.voucher)} onClose={() => setNoteModal(null)} />
     </div>
   )
 }
@@ -309,23 +295,20 @@ function QueueSection({ label, items, progress, borderColor, onComplete }) {
       {items.map((s, i) => {
         const isDone = !!progress[s.voucher_number]?.completed
         const vNum = s.voucher_number.replace('VOU', '')
-        const stColors = { Contacted: 'var(--green-t)', Processing: 'var(--blue-t)', Pending: 'var(--amber-t)' }
+        const stColors = { Contacted: 'var(--green-t)', Processing: 'var(--blue-t)', Pending: 'var(--amber-t)', Filed: 'var(--red-t)' }
         return (
           <div key={s.voucher_number} style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px',
-            borderRadius: 'var(--r)', border: `1px solid var(--border)`, borderLeft: `3px solid ${borderColor}`,
-            marginBottom: 5, background: 'var(--bg3)', opacity: isDone ? 0.38 : 1,
+            display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderRadius: 'var(--r)',
+            border: `1px solid var(--border)`, borderLeft: `3px solid ${borderColor}`, marginBottom: 5, background: 'var(--bg3)', opacity: isDone ? 0.38 : 1,
           }}>
             <span style={{ fontSize: 11, color: 'var(--text3)', minWidth: 20 }}>{i + 1}</span>
-            <a href={`https://geminiduplication.com/vouchers/session/${vNum}`} target="_blank" rel="noreferrer"
-              style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: 'var(--blue-t)' }}>{vNum}</a>
+            <a href={`https://geminiduplication.com/vouchers/session/${vNum}`} target="_blank" rel="noreferrer" style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: 'var(--blue-t)' }}>{vNum}</a>
             <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 3, background: 'var(--bg4)', color: stColors[s.status] || 'var(--text2)' }}>{s.status}</span>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 11, color: 'var(--text3)' }}>{fmtDate(s.next_call_date)}</span>
               <button onClick={() => onComplete(s.voucher_number, s.next_call_date)} style={{
                 width: 24, height: 24, borderRadius: 5, border: isDone ? 'none' : '1.5px solid var(--border2)',
-                background: isDone ? 'var(--green)' : 'var(--bg4)', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: isDone ? 'var(--green)' : 'var(--bg4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 {isDone && <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#0f1117" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
               </button>
@@ -336,3 +319,52 @@ function QueueSection({ label, items, progress, borderColor, onComplete }) {
     </div>
   )
 }
+
+function SessionsTable({ sessions, progress, notes, dynCal, onComplete, onNote, onStatusChange }) {
+  const sorted = [...sessions].sort((a, b) => { const pa = priorityOrder(a.status), pb = priorityOrder(b.status); if (pa !== pb) return pa - pb; return (a.next_call_date || '').localeCompare(b.next_call_date || '') })
+  const overdue = sorted.filter(s => s.is_overdue)
+  const future = sorted.filter(s => !s.is_overdue)
+
+  const GroupTable = ({ title, badgeColor, sessions }) => {
+    const done = sessions.filter(s => progress[s.voucher_number]?.completed).length
+    return (
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>{title}</span>
+          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: 'var(--bg4)', color: badgeColor }}>{sessions.length}</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 'auto' }}>{done}/{sessions.length} done</span>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr>
+                <th style={thS}>#</th><th style={thS}>Voucher</th><th style={thS}>Status</th><th style={thS}>Next Call</th><th style={thS}>New Date</th><th style={thS}>Notes</th><th style={{ ...thS, width: 44, textAlign: 'center' }}>✓</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.map((s, i) => {
+                const p = progress[s.voucher_number]; const isDone = !!p?.completed; const nd = p?.new_call_date || ''; const ndLoad = nd && dynCal ? (dynCal[nd]?.count || 0) : 0; const ndColor = ndLoad >= 15 ? 'var(--red-t)' : ndLoad >= 12 ? 'var(--amber-t)' : 'var(--green-t)'; const ndBg = ndLoad >= 15 ? 'var(--red-bg)' : ndLoad >= 12 ? 'var(--amber-bg)' : 'var(--green-bg)'; const hasNote = !!notes?.[s.voucher_number]
+                return (
+                  <tr key={s.voucher_number} style={{ opacity: isDone ? 0.38 : 1 }} onMouseEnter={e => !isDone && (e.currentTarget.style.background = 'var(--bg3)')} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <td style={tdS('var(--text3)', 11)}>{i + 1}</td>
+                    <td style={tdS()}><VoucherLink voucher={s.voucher_number} /></td>
+                    <td style={tdS()}>{onStatusChange ? <StatusSelect value={s.status} onChange={v => onStatusChange(s.voucher_number, v)} /> : <StatusBadge status={s.status} />}</td>
+                    <td style={tdS('var(--text3)', 11)}>{fmtDate(s.next_call_date)}</td>
+                    <td style={tdS()}>{nd ? <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: ndBg, color: ndColor }}>{fmtDate(nd)}</span> : <span style={{ color: 'var(--text3)' }}>—</span>}</td>
+                    <td style={tdS()}><button onClick={() => onNote?.(s.voucher_number)} style={{ background: hasNote ? 'var(--amber-bg)' : 'var(--bg4)', border: `1px solid ${hasNote ? 'rgba(245,166,35,.3)' : 'var(--border2)'}`, borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer', color: hasNote ? 'var(--amber-t)' : 'var(--text3)' }}>{hasNote ? '📝 View' : '+ Note'}</button></td>
+                    <td style={{ ...tdS(), textAlign: 'center' }}><button onClick={() => onComplete?.(s.voucher_number, s.next_call_date)} style={{ width: 22, height: 22, borderRadius: 5, border: isDone ? 'none' : '1.5px solid var(--border2)', background: isDone ? 'var(--green)' : 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>{isDone && <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#0f1117" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}</button></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
+
+  return (<div>{overdue.length > 0 && <GroupTable title="Overdue / Sprint List" badgeColor="var(--red-t)" sessions={overdue} />}{future.length > 0 && <GroupTable title="Upcoming" badgeColor="var(--green-t)" sessions={future} />}</div>)
+}
+
+const thS = { textAlign: 'left', padding: '6px 10px', fontSize: 11, fontWeight: 500, color: 'var(--text3)', borderBottom: '1px solid var(--border)', background: 'var(--bg3)', whiteSpace: 'nowrap' }
+const tdS = (color, size) => ({ padding: '6px 10px', borderBottom: '1px solid var(--border)', verticalAlign: 'middle', ...(color ? { color } : {}), ...(size ? { fontSize: size } : {}) })

@@ -1,6 +1,7 @@
 import React from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import TLConsolePage from './pages/TLConsolePage'
+import SpecialistPage from './pages/SpecialistPage'
 
 const SPECIALISTS = [
   { key: 'alejandro-guerrero', name: 'Alejandro Guerrero' },
@@ -57,15 +58,19 @@ function NavLink({ to, active, icon, label }) {
 export default function App() {
   return (
     <BrowserRouter>
-      <div style={{ display: 'flex', minHeight: '100vh' }}>
-        <Sidebar />
-        <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
-          <Routes>
-            <Route path="/" element={<TLConsolePage />} />
-            <Route path="/s/:key" element={<TLConsolePage />} />
-          </Routes>
-        </div>
-      </div>
+      <Routes>
+        {/* TL Dashboard with sidebar */}
+        <Route path="/" element={
+          <div style={{ display: 'flex', minHeight: '100vh' }}>
+            <Sidebar />
+            <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+              <TLConsolePage />
+            </div>
+          </div>
+        } />
+        {/* Specialist view — isolated, no sidebar */}
+        <Route path="/s/:key" element={<SpecialistPage />} />
+      </Routes>
     </BrowserRouter>
   )
 }
