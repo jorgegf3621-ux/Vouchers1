@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
+import { useParams } from 'react-router-dom'
 import { format } from 'date-fns'
 import { supabase } from '../lib/supabase'
 import { useTLData } from '../hooks/useData'
@@ -7,17 +8,30 @@ import { Card, Tabs, Alert, StatCard, Btn, StatusBadge } from '../components/ui'
 import { VoucherLink } from '../components/SessionsTable'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
+const SPECIALIST_MAP = {
+  'alejandro-guerrero': 'Alejandro Guerrero',
+  'jonathan-flores': 'Jonathan Flores',
+  'jose-angel-aleman': 'Jose Angel Aleman',
+  'juno-urdiales': 'Juno Urdiales',
+  'luis-gallegos': 'Luis Gallegos',
+}
+
 const TABS = [
-  { key: 'import', icon: '📤', label: 'Import CSV' },
   { key: 'dashboard', icon: '📊', label: 'Dashboard' },
   { key: 'alerts', icon: '🚨', label: 'Alerts' },
   { key: 'backlog', icon: '📈', label: 'Backlog' },
   { key: 'sessions', icon: '📋', label: 'Sessions' },
 ]
 
+const TABS_WITH_IMPORT = [
+  { key: 'import', icon: '📤', label: 'Import CSV' },
+  ...TABS,
+]
+
 export default function TLConsolePage() {
+  const { key } = useParams()
   const { sessions, progress, loading, error, connected, reload } = useTLData()
-  const [tab, setTab] = useState('import')
+  const [tab, setTab] = useState('dashboard')
   const [parsedFiles, setParsedFiles] = useState([])
   const [parsedRows, setParsedRows] = useState([])
   const [importing, setImporting] = useState(false)
@@ -27,6 +41,13 @@ export default function TLConsolePage() {
   const [searchSessions, setSearchSessions] = useState('')
   const [filterSpec, setFilterSpec] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+
+  // Auto-select specialist from URL
+  useEffect(() => {
+    if (key && SPECIALIST_MAP[key]) {
+      setFilterSpec(SPECIALIST_MAP[key])
+    }
+  }, [key])
 
   // ── CSV HANDLING ──
   const handleFiles = async (files) => {
@@ -161,17 +182,23 @@ export default function TLConsolePage() {
     }).slice(0, 300)
   }, [specSessions, filterStatus, searchSessions])
 
+  const isSpecialistView = !!key && SPECIALIST_MAP[key]
+  const viewTitle = isSpecialistView ? filterSpec : 'TL Console — Voucher Sessions'
+  const viewSubtitle = isSpecialistView
+    ? (loading ? 'Loading...' : `${specSessions.length} sessions`)
+    : (loading ? 'Loading...' : error ? `Error: ${error}` : `${sessions.length} sessions · ${specialists.length} specialists`)
+
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 16px' }}>
 
       {/* Header */}
       <div style={{ background: 'var(--bg2)', borderRadius: 'var(--rl)', border: '1px solid var(--border)', padding: '16px 22px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-        <div style={{ width: 42, height: 42, borderRadius: 'var(--r)', background: 'var(--purple-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🎛</div>
+        <div style={{ width: 42, height: 42, borderRadius: 'var(--r)', background: isSpecialistView ? 'var(--blue-bg)' : 'var(--purple-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+          {isSpecialistView ? '👤' : '🎛'}
+        </div>
         <div>
-          <div style={{ fontSize: 17, fontWeight: 700 }}>TL Console — Voucher Sessions</div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-            {loading ? 'Loading...' : error ? `Error: ${error}` : `${sessions.length} sessions · ${specialists.length} specialists`}
-          </div>
+          <div style={{ fontSize: 17, fontWeight: 700 }}>{viewTitle}</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{viewSubtitle}</div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -182,21 +209,23 @@ export default function TLConsolePage() {
         </div>
       </div>
 
-      {/* Specialist Filter */}
-      <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)' }}>👤 Specialist:</span>
-        <select value={filterSpec} onChange={e => setFilterSpec(e.target.value)}
-          style={{ padding: '6px 12px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 12, outline: 'none', cursor: 'pointer', fontWeight: filterSpec ? 600 : 400 }}>
-          <option value="">All Specialists ({specialists.length})</option>
-          {specialists.map(s => <option key={s}>{s}</option>)}
-        </select>
-        {filterSpec && <Btn variant="default" size="sm" onClick={() => setFilterSpec('')}>✕ Clear</Btn>}
-      </div>
+      {/* Specialist Filter — only show on main dashboard */}
+      {!isSpecialistView && (
+        <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)' }}>👤 Specialist:</span>
+          <select value={filterSpec} onChange={e => setFilterSpec(e.target.value)}
+            style={{ padding: '6px 12px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 12, outline: 'none', cursor: 'pointer', fontWeight: filterSpec ? 600 : 400 }}>
+            <option value="">All Specialists ({specialists.length})</option>
+            {specialists.map(s => <option key={s}>{s}</option>)}
+          </select>
+          {filterSpec && <Btn variant="default" size="sm" onClick={() => setFilterSpec('')}>✕ Clear</Btn>}
+        </div>
+      )}
 
-      <Tabs tabs={TABS} active={tab} onChange={setTab} />
+      <Tabs tabs={isSpecialistView ? TABS : TABS_WITH_IMPORT} active={tab} onChange={setTab} />
 
-      {/* IMPORT */}
-      {tab === 'import' && (
+      {/* IMPORT — only on main dashboard */}
+      {!isSpecialistView && tab === 'import' && (
         <div>
           <Card style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>📤 Import Voucher Sessions</div>
