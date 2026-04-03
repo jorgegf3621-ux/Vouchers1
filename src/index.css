@@ -1,0 +1,59 @@
+:root {
+  --bg: #0f1117;
+  --bg2: #161b27;
+  --bg3: #1c2333;
+  --bg4: #212840;
+  --surface: #1a2035;
+  --surface2: #202640;
+
+  --border: rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.12);
+
+  --text: #e8eaf0;
+  --text2: #9ba3bb;
+  --text3: #5c6480;
+
+  --blue: #4f8ef7;
+  --blue-bg: rgba(79,142,247,0.12);
+  --blue-t: #7aabff;
+
+  --green: #3dd68c;
+  --green-bg: rgba(61,214,140,0.1);
+  --green-t: #5ee8a0;
+
+  --amber: #f5a623;
+  --amber-bg: rgba(245,166,35,0.1);
+  --amber-t: #ffc14d;
+
+  --red: #f25c6e;
+  --red-bg: rgba(242,92,110,0.1);
+  --red-t: #ff7a89;
+
+  --purple: #9b59f7;
+  --purple-bg: rgba(155,89,247,0.1);
+
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-sans: 'IBM Plex Sans', sans-serif;
+
+  --r: 8px;
+  --rl: 12px;
+  --rxl: 16px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+
+a { color: inherit; text-decoration: none; }
+button { cursor: pointer; font-family: var(--font-sans); }
+input, select, textarea { font-family: var(--font-sans); }
