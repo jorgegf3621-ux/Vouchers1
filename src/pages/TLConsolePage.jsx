@@ -82,7 +82,7 @@ export default function TLConsolePage() {
     const records = parsedRows.map(r => {
       const nd = parseCSVDate(r['Next Call'])
       const status = r['Status'] || 'Contacted'
-      const isOverdueStatus = ['Pending', 'Contacted', 'Filed'].includes(status)
+      const isOverdueStatus = ['Pending', 'Contacted', 'Processing'].includes(status)
       return {
         voucher_number: r['Voucher Number'],
         case_specialist: r['Case Specialist'] || 'Unknown',
@@ -120,20 +120,33 @@ export default function TLConsolePage() {
   // ── DASHBOARD ──
   const totalSessions = specSessions.length
   const overdueSessions = specSessions.filter(s => s.is_overdue)
-  const backlogSessions = specSessions.filter(s => s.is_overdue && s.status !== 'Filed')
+  const backlogSessions = overdueSessions // Now only Pending/Contacted/Processing count
   const completedCount = Object.values(progress).filter(p => p.completed && specSessions.some(s => s.voucher_number === p.voucher_number)).length
   const backlogLeft = backlogSessions.filter(s => !progress[s.voucher_number]?.completed).length
   const backlogPct = backlogSessions.length ? Math.round((backlogSessions.length - backlogLeft) / backlogSessions.length * 100) : 100
 
-  // Per-specialist stats
+  // Status breakdown
+  const statusBreakdown = useMemo(() => {
+    const counts = { Contacted: 0, Processing: 0, Pending: 0, Filed: 0, Other: 0 }
+    specSessions.forEach(s => {
+      if (counts[s.status] !== undefined) counts[s.status]++
+      else counts.Other++
+    })
+    return counts
+  }, [specSessions])
+
+  // Per-specialist stats with breakdown
   const specStats = useMemo(() => {
     if (!filterSpec) {
       return specialists.map(spec => {
         const mine = sessions.filter(s => s.case_specialist === spec)
-        const ov = mine.filter(s => s.is_overdue && s.status !== 'Filed')
+        const ov = mine.filter(s => s.is_overdue)
         const done = ov.filter(s => progress[s.voucher_number]?.completed).length
         const left = ov.length - done
-        return { spec, total: mine.length, overdue: ov.length, done, left }
+        // Status breakdown
+        const byStatus = { Contacted: 0, Processing: 0, Pending: 0, Filed: 0 }
+        mine.forEach(s => { if (byStatus[s.status] !== undefined) byStatus[s.status]++ })
+        return { spec, total: mine.length, overdue: ov.length, done, left, byStatus }
       })
     }
     return []
@@ -152,7 +165,7 @@ export default function TLConsolePage() {
         else if (left > 15) as.push({ v: 'amber', i: '⚠', title: `${spec} — Backlog warning (${left})`, body: 'Approaching threshold.' })
       })
       const totalLeft = specStats.reduce((s, { left }) => s + left, 0)
-      if (totalLeft === 0 && sessions.some(s => s.is_overdue && s.status !== 'Filed')) as.unshift({ v: 'green', i: '✅', title: 'All backlogs cleared!', body: 'All specialists are on track.' })
+      if (totalLeft === 0 && sessions.some(s => s.is_overdue)) as.unshift({ v: 'green', i: '✅', title: 'All backlogs cleared!', body: 'All specialists are on track.' })
     }
     return as
   }, [filterSpec, backlogLeft, overdueSessions.length, specStats, sessions])
@@ -298,8 +311,25 @@ export default function TLConsolePage() {
                 <StatCard label="Overdue" value={overdueSessions.length} variant="warn" icon="⏰" />
                 <StatCard label="Completed" value={completedCount} variant="good" icon="✅" />
               </div>
+
+              {/* Status Breakdown */}
+              <Card style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>📊 Status Breakdown — {filterSpec}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(100px,1fr))', gap: 8 }}>
+                  {Object.entries(statusBreakdown).map(([status, count]) => {
+                    const colors = { Contacted: 'var(--green-t)', Processing: 'var(--blue-t)', Pending: 'var(--amber-t)', Filed: 'var(--red-t)', Other: 'var(--text3)' }
+                    return (
+                      <div key={status} style={{ textAlign: 'center', background: 'var(--bg3)', borderRadius: 'var(--r)', padding: '10px 8px' }}>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: colors[status], fontFamily: 'var(--font-mono)' }}>{count}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{status}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
+
               <Card>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📊 {filterSpec} — Backlog Progress</div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📊 Backlog Progress</div>
                 <div style={{ height: 8, background: 'var(--bg4)', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
                   <div style={{ height: '100%', width: `${backlogPct}%`, background: backlogPct >= 80 ? 'var(--green)' : backlogPct >= 50 ? 'var(--amber)' : 'var(--red)', borderRadius: 4, transition: 'width .5s' }} />
                 </div>
@@ -311,32 +341,68 @@ export default function TLConsolePage() {
             </div>
           ) : (
             // All specialists view
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 10 }}>
-              {specStats.map(({ spec, total, overdue, done, left }) => {
-                const pct = overdue ? Math.round(done / overdue * 100) : 100
-                const color = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)'
-                return (
-                  <Card key={spec} style={{ cursor: 'pointer' }} onClick={() => setFilterSpec(spec)}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700 }}>👤 {spec}</span>
-                      <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 3, background: left > 25 ? 'var(--red-bg)' : left > 10 ? 'var(--amber-bg)' : 'var(--green-bg)', color: left > 25 ? 'var(--red-t)' : left > 10 ? 'var(--amber-t)' : 'var(--green-t)' }}>
-                        {left > 25 ? '⛔' : left > 10 ? '⚠' : '✓'} {left} left
-                      </span>
+            <div>
+              {/* Total Summary */}
+              <Card style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>📊 Total Summary — All Specialists</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(100px,1fr))', gap: 8, marginBottom: 12 }}>
+                  {[
+                    ['Total', sessions.length, 'var(--text)'],
+                    ['Contacted', sessions.filter(s => s.status === 'Contacted').length, 'var(--green-t)'],
+                    ['Processing', sessions.filter(s => s.status === 'Processing').length, 'var(--blue-t)'],
+                    ['Pending', sessions.filter(s => s.status === 'Pending').length, 'var(--amber-t)'],
+                    ['Filed', sessions.filter(s => s.status === 'Filed').length, 'var(--red-t)'],
+                    ['Backlog', specStats.reduce((s, { left }) => s + left, 0), 'var(--red-t)'],
+                  ].map(([lbl, val, clr]) => (
+                    <div key={lbl} style={{ textAlign: 'center', background: 'var(--bg3)', borderRadius: 'var(--r)', padding: '10px 8px' }}>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: clr, fontFamily: 'var(--font-mono)' }}>{val}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{lbl}</div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 10 }}>
-                      {[['Backlog', left, 'var(--red-t)'], ['Done', done, 'var(--green-t)'], ['Total', total, 'var(--text)']].map(([lbl, val, clr]) => (
-                        <div key={lbl} style={{ textAlign: 'center', background: 'var(--bg3)', borderRadius: 'var(--r)', padding: '6px 4px' }}>
-                          <div style={{ fontSize: 16, fontWeight: 700, color: clr, fontFamily: 'var(--font-mono)' }}>{val}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text3)' }}>{lbl}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{ height: 5, background: 'var(--bg4)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width .5s' }} />
-                    </div>
-                  </Card>
-                )
-              })}
+                  ))}
+                </div>
+              </Card>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 10 }}>
+                {specStats.map(({ spec, total, overdue, done, left, byStatus }) => {
+                  const pct = overdue ? Math.round(done / overdue * 100) : 100
+                  const color = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)'
+                  return (
+                    <Card key={spec} style={{ cursor: 'pointer' }} onClick={() => setFilterSpec(spec)}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>👤 {spec}</span>
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 3, background: left > 25 ? 'var(--red-bg)' : left > 10 ? 'var(--amber-bg)' : 'var(--green-bg)', color: left > 25 ? 'var(--red-t)' : left > 10 ? 'var(--amber-t)' : 'var(--green-t)' }}>
+                          {left > 25 ? '⛔' : left > 10 ? '⚠' : '✓'} {left} left
+                        </span>
+                      </div>
+
+                      {/* Mini status breakdown */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4, marginBottom: 10 }}>
+                        {Object.entries(byStatus).map(([st, cnt]) => {
+                          const stColors = { Contacted: 'var(--green-t)', Processing: 'var(--blue-t)', Pending: 'var(--amber-t)', Filed: 'var(--red-t)' }
+                          return (
+                            <div key={st} style={{ textAlign: 'center', background: 'var(--bg4)', borderRadius: 4, padding: '4px 2px' }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: stColors[st], fontFamily: 'var(--font-mono)' }}>{cnt}</div>
+                              <div style={{ fontSize: 8, color: 'var(--text3)', textTransform: 'uppercase' }}>{st.slice(0, 3)}</div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 10 }}>
+                        {[['Backlog', left, 'var(--red-t)'], ['Done', done, 'var(--green-t)'], ['Total', total, 'var(--text)']].map(([lbl, val, clr]) => (
+                          <div key={lbl} style={{ textAlign: 'center', background: 'var(--bg3)', borderRadius: 'var(--r)', padding: '6px 4px' }}>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: clr, fontFamily: 'var(--font-mono)' }}>{val}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text3)' }}>{lbl}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ height: 5, background: 'var(--bg4)', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width .5s' }} />
+                      </div>
+                    </Card>
+                  )
+                })}
+              </div>
             </div>
           )}
         </div>

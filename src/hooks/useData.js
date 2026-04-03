@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { format } from 'date-fns'
 
 const TODAY_ISO = format(new Date(), 'yyyy-MM-dd')
-const OVERDUE_STATUSES = ['Pending', 'Contacted', 'Filed']
+const OVERDUE_STATUSES = ['Pending', 'Contacted', 'Processing']
 
 function computeIsOverdue(session) {
   if (!session.next_call_date) return false
