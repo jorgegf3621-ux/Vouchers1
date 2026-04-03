@@ -12,7 +12,7 @@ export function useTLData() {
     setLoading(true)
     try {
       const [sessRes, progRes] = await Promise.all([
-        supabase.from('voucher_sessions').select('voucher_number,status,next_call_date,is_overdue').order('next_call_date').limit(2000),
+        supabase.from('voucher_sessions').select('voucher_number,case_specialist,status,next_call_date,is_overdue').order('next_call_date').limit(2000),
         supabase.from('voucher_progress').select('voucher_number,completed,new_call_date,completed_at').limit(2000),
       ])
       if (sessRes.error) throw sessRes.error

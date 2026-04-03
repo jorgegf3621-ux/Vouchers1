@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react'
-import { format, parseISO } from 'date-fns'
+import { format } from 'date-fns'
 import { supabase } from '../lib/supabase'
 import { useTLData } from '../hooks/useData'
-import { parseCSV, parseCSVDate, BACKLOG_THRESHOLD, TODAY_ISO, detectSnowball } from '../lib/sprint'
+import { parseCSV, parseCSVDate, BACKLOG_THRESHOLD, TODAY_ISO } from '../lib/sprint'
 import { Card, Tabs, Alert, StatCard, Btn, StatusBadge } from '../components/ui'
 import { VoucherLink } from '../components/SessionsTable'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
@@ -25,6 +25,7 @@ export default function TLConsolePage() {
   const [importResult, setImportResult] = useState(null)
   const [backlogView, setBacklogView] = useState('week')
   const [searchSessions, setSearchSessions] = useState('')
+  const [filterSpec, setFilterSpec] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
 
   // ── CSV HANDLING ──
@@ -63,6 +64,7 @@ export default function TLConsolePage() {
       const isOverdueStatus = ['Pending', 'Contacted', 'Filed'].includes(status)
       return {
         voucher_number: r['Voucher Number'],
+        case_specialist: r['Case Specialist'] || 'Unknown',
         status,
         next_call_date: nd,
         is_overdue: isOverdueStatus && nd ? nd <= TODAY_ISO : false,
@@ -85,22 +87,54 @@ export default function TLConsolePage() {
     await reload()
   }
 
+  // ── SPECIALISTS ──
+  const specialists = useMemo(() => [...new Set(sessions.map(s => s.case_specialist).filter(Boolean))].sort(), [sessions])
+
+  // Filtered sessions by specialist
+  const specSessions = useMemo(() => {
+    if (!filterSpec) return sessions
+    return sessions.filter(s => s.case_specialist === filterSpec)
+  }, [sessions, filterSpec])
+
   // ── DASHBOARD ──
-  const totalSessions = sessions.length
-  const overdueSessions = sessions.filter(s => s.is_overdue)
-  const backlogSessions = sessions.filter(s => s.is_overdue && s.status !== 'Filed')
-  const completedCount = Object.values(progress).filter(p => p.completed).length
+  const totalSessions = specSessions.length
+  const overdueSessions = specSessions.filter(s => s.is_overdue)
+  const backlogSessions = specSessions.filter(s => s.is_overdue && s.status !== 'Filed')
+  const completedCount = Object.values(progress).filter(p => p.completed && specSessions.some(s => s.voucher_number === p.voucher_number)).length
   const backlogLeft = backlogSessions.filter(s => !progress[s.voucher_number]?.completed).length
-  const backlogPct = backlogSessions.length ? Math.round(completedCount / backlogSessions.length * 100) : 100
+  const backlogPct = backlogSessions.length ? Math.round((backlogSessions.length - backlogLeft) / backlogSessions.length * 100) : 100
+
+  // Per-specialist stats
+  const specStats = useMemo(() => {
+    if (!filterSpec) {
+      return specialists.map(spec => {
+        const mine = sessions.filter(s => s.case_specialist === spec)
+        const ov = mine.filter(s => s.is_overdue && s.status !== 'Filed')
+        const done = ov.filter(s => progress[s.voucher_number]?.completed).length
+        const left = ov.length - done
+        return { spec, total: mine.length, overdue: ov.length, done, left }
+      })
+    }
+    return []
+  }, [filterSpec, specialists, sessions, progress])
 
   // ── ALERTS ──
   const tlAlerts = useMemo(() => {
     const as = []
-    if (backlogLeft > BACKLOG_THRESHOLD) as.push({ v: 'red', i: '⛔', title: `Backlog above threshold (${backlogLeft})`, body: 'Sprint plan needed immediately.' })
-    else if (backlogLeft > 15) as.push({ v: 'amber', i: '⚠', title: `Backlog warning (${backlogLeft})`, body: 'Approaching threshold.' })
-    if (backlogLeft === 0 && overdueSessions.length > 0) as.unshift({ v: 'green', i: '✅', title: 'All backlogs cleared!', body: 'All sessions are on track.' })
+    if (filterSpec) {
+      if (backlogLeft > BACKLOG_THRESHOLD) as.push({ v: 'red', i: '⛔', title: `${filterSpec} — Backlog above threshold (${backlogLeft})`, body: 'Sprint plan needed immediately.' })
+      else if (backlogLeft > 15) as.push({ v: 'amber', i: '⚠', title: `${filterSpec} — Backlog warning (${backlogLeft})`, body: 'Approaching threshold.' })
+      if (backlogLeft === 0 && overdueSessions.length > 0) as.unshift({ v: 'green', i: '✅', title: `${filterSpec} — All backlogs cleared!`, body: 'All sessions are on track.' })
+    } else {
+      specStats.forEach(({ spec, left }) => {
+        if (left > BACKLOG_THRESHOLD) as.push({ v: 'red', i: '⛔', title: `${spec} — Backlog above threshold (${left})`, body: 'Sprint plan needed immediately.' })
+        else if (left > 15) as.push({ v: 'amber', i: '⚠', title: `${spec} — Backlog warning (${left})`, body: 'Approaching threshold.' })
+      })
+      const totalLeft = specStats.reduce((s, { left }) => s + left, 0)
+      if (totalLeft === 0 && sessions.some(s => s.is_overdue && s.status !== 'Filed')) as.unshift({ v: 'green', i: '✅', title: 'All backlogs cleared!', body: 'All specialists are on track.' })
+    }
     return as
-  }, [backlogLeft, overdueSessions.length])
+  }, [filterSpec, backlogLeft, overdueSessions.length, specStats, sessions])
 
   // ── BACKLOG CHART ──
   const backlogData = useMemo(() => {
@@ -111,23 +145,21 @@ export default function TLConsolePage() {
     else if (backlogView === 'month') { from = new Date(now.getFullYear(), now.getMonth(), 1); to = new Date(now.getFullYear(), now.getMonth() + 1, 0) }
     for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
       const iso = format(d, 'yyyy-MM-dd')
-      const due = sessions.filter(s => s.next_call_date === iso).length
-      const done = sessions.filter(s => (progress[s.voucher_number]?.completed_at || '').startsWith(iso)).length
+      const due = specSessions.filter(s => s.next_call_date === iso).length
+      const done = specSessions.filter(s => (progress[s.voucher_number]?.completed_at || '').startsWith(iso)).length
       days.push({ date: iso, due, done, label: format(new Date(iso + 'T12:00'), 'MMM d') })
     }
     return days
-  }, [backlogView, sessions, progress])
+  }, [backlogView, specSessions, progress])
 
   // ── SESSIONS TABLE ──
   const filteredSessions = useMemo(() => {
-    return sessions.filter(s => {
+    return specSessions.filter(s => {
       if (filterStatus && s.status !== filterStatus) return false
       if (searchSessions && !s.voucher_number.toLowerCase().includes(searchSessions.toLowerCase())) return false
       return true
     }).slice(0, 300)
-  }, [sessions, filterStatus, searchSessions])
-
-  const snowball = detectSnowball({})
+  }, [specSessions, filterStatus, searchSessions])
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 16px' }}>
@@ -138,7 +170,7 @@ export default function TLConsolePage() {
         <div>
           <div style={{ fontSize: 17, fontWeight: 700 }}>TL Console — Voucher Sessions</div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-            {loading ? 'Loading...' : error ? `Error: ${error}` : `${totalSessions} sessions`}
+            {loading ? 'Loading...' : error ? `Error: ${error}` : `${sessions.length} sessions · ${specialists.length} specialists`}
           </div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -148,6 +180,17 @@ export default function TLConsolePage() {
           </div>
           <Btn variant="default" size="sm" onClick={reload}>↺ Refresh</Btn>
         </div>
+      </div>
+
+      {/* Specialist Filter */}
+      <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)' }}>👤 Specialist:</span>
+        <select value={filterSpec} onChange={e => setFilterSpec(e.target.value)}
+          style={{ padding: '6px 12px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 12, outline: 'none', cursor: 'pointer', fontWeight: filterSpec ? 600 : 400 }}>
+          <option value="">All Specialists ({specialists.length})</option>
+          {specialists.map(s => <option key={s}>{s}</option>)}
+        </select>
+        {filterSpec && <Btn variant="default" size="sm" onClick={() => setFilterSpec('')}>✕ Clear</Btn>}
       </div>
 
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
@@ -168,7 +211,7 @@ export default function TLConsolePage() {
             >
               <div style={{ fontSize: 32, marginBottom: 10 }}>📁</div>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Drop CSV files here or click to browse</div>
-              <div style={{ fontSize: 12, color: 'var(--text3)' }}>Expected columns: Voucher Number, Status, Next Call</div>
+              <div style={{ fontSize: 12, color: 'var(--text3)' }}>Expected columns: Voucher Number, Case Specialist, Status, Next Call</div>
             </div>
             <input id="csv-input" type="file" accept=".csv" multiple onChange={e => handleFiles(e.target.files)} style={{ display: 'none' }} />
 
@@ -217,23 +260,56 @@ export default function TLConsolePage() {
       {/* DASHBOARD */}
       {tab === 'dashboard' && (
         <div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10, marginBottom: 14 }}>
-            <StatCard label="Total Sessions" value={totalSessions} variant="blue" icon="📋" />
-            <StatCard label="Active Backlog" value={backlogLeft} variant="danger" icon="🔴" />
-            <StatCard label="Overdue Total" value={overdueSessions.length} variant="warn" icon="⏰" />
-            <StatCard label="Completed" value={completedCount} variant="good" icon="✅" />
-          </div>
-
-          <Card>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📊 Backlog Progress</div>
-            <div style={{ height: 8, background: 'var(--bg4)', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
-              <div style={{ height: '100%', width: `${backlogPct}%`, background: backlogPct >= 80 ? 'var(--green)' : backlogPct >= 50 ? 'var(--amber)' : 'var(--red)', borderRadius: 4, transition: 'width .5s' }} />
+          {filterSpec ? (
+            // Single specialist view
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10, marginBottom: 14 }}>
+                <StatCard label="Total Sessions" value={totalSessions} variant="blue" icon="📋" />
+                <StatCard label="Active Backlog" value={backlogLeft} variant="danger" icon="🔴" />
+                <StatCard label="Overdue" value={overdueSessions.length} variant="warn" icon="⏰" />
+                <StatCard label="Completed" value={completedCount} variant="good" icon="✅" />
+              </div>
+              <Card>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📊 {filterSpec} — Backlog Progress</div>
+                <div style={{ height: 8, background: 'var(--bg4)', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
+                  <div style={{ height: '100%', width: `${backlogPct}%`, background: backlogPct >= 80 ? 'var(--green)' : backlogPct >= 50 ? 'var(--amber)' : 'var(--red)', borderRadius: 4, transition: 'width .5s' }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text3)' }}>
+                  <span>{backlogPct}% cleared</span>
+                  <span>{backlogLeft} remaining</span>
+                </div>
+              </Card>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text3)' }}>
-              <span>{backlogPct}% cleared</span>
-              <span>{backlogLeft} remaining</span>
+          ) : (
+            // All specialists view
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 10 }}>
+              {specStats.map(({ spec, total, overdue, done, left }) => {
+                const pct = overdue ? Math.round(done / overdue * 100) : 100
+                const color = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)'
+                return (
+                  <Card key={spec} style={{ cursor: 'pointer' }} onClick={() => setFilterSpec(spec)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>👤 {spec}</span>
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 3, background: left > 25 ? 'var(--red-bg)' : left > 10 ? 'var(--amber-bg)' : 'var(--green-bg)', color: left > 25 ? 'var(--red-t)' : left > 10 ? 'var(--amber-t)' : 'var(--green-t)' }}>
+                        {left > 25 ? '⛔' : left > 10 ? '⚠' : '✓'} {left} left
+                      </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 10 }}>
+                      {[['Backlog', left, 'var(--red-t)'], ['Done', done, 'var(--green-t)'], ['Total', total, 'var(--text)']].map(([lbl, val, clr]) => (
+                        <div key={lbl} style={{ textAlign: 'center', background: 'var(--bg3)', borderRadius: 'var(--r)', padding: '6px 4px' }}>
+                          <div style={{ fontSize: 16, fontWeight: 700, color: clr, fontFamily: 'var(--font-mono)' }}>{val}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text3)' }}>{lbl}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ height: 5, background: 'var(--bg4)', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width .5s' }} />
+                    </div>
+                  </Card>
+                )
+              })}
             </div>
-          </Card>
+          )}
         </div>
       )}
 
@@ -255,7 +331,7 @@ export default function TLConsolePage() {
       {tab === 'backlog' && (
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>📈 Call Load by Day</span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>📈 Call Load by Day {filterSpec && `— ${filterSpec}`}</span>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
               {['week', 'month'].map(v => (
                 <button key={v} onClick={() => setBacklogView(v)} style={{
@@ -298,7 +374,7 @@ export default function TLConsolePage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
-                  {['Voucher', 'Status', 'Next Call', 'Overdue', 'Done', 'New Date'].map(h => (
+                  {['Voucher', 'Specialist', 'Status', 'Next Call', 'Overdue', 'Done', 'New Date'].map(h => (
                     <th key={h} style={thSt}>{h}</th>
                   ))}
                 </tr>
@@ -311,6 +387,7 @@ export default function TLConsolePage() {
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                       <td style={tdSt}><VoucherLink voucher={s.voucher_number} /></td>
+                      <td style={{ ...tdSt, fontSize: 11, color: 'var(--text2)' }}>{s.case_specialist}</td>
                       <td style={tdSt}><StatusBadge status={s.status} /></td>
                       <td style={{ ...tdSt, fontSize: 11, color: 'var(--text3)' }}>{s.next_call_date || '—'}</td>
                       <td style={tdSt}>{s.is_overdue ? <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 3, background: 'var(--red-bg)', color: 'var(--red-t)' }}>Overdue</span> : '—'}</td>
