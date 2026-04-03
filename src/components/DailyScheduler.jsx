@@ -12,16 +12,16 @@ const TYPE_COLORS = {
   call: { bg: 'rgba(79,142,247,.15)', border: 'var(--blue-t)', text: 'var(--blue-t)', icon: '📞' },
   meeting: { bg: 'rgba(155,89,247,.15)', border: '#a78bfa', text: '#a78bfa', icon: '📌' },
   other: { bg: 'rgba(99,102,241,.15)', border: '#818cf8', text: '#818cf8', icon: '📋' },
-  break: { bg: 'rgba(61,214,140,.12)', border: 'var(--green-t)', text: 'var(--green-t)', icon: '☕' },
-  lunch: { bg: 'rgba(245,166,35,.12)', border: 'var(--amber-t)', text: 'var(--amber-t)', icon: '🍽️' },
+  break: { bg: 'rgba(61,214,140,.15)', border: 'var(--green-t)', text: 'var(--green-t)', icon: '☕' },
+  lunch: { bg: 'rgba(245,166,35,.15)', border: 'var(--amber-t)', text: 'var(--amber-t)', icon: '🍽️' },
 }
 
-// Pre-defined breaks and lunch
-const DEFAULT_BREAKS = [
-  { id: 'break1', type: 'break', label: 'Break 1', startTime: '11:00', duration: 30, note: '' },  // 11:00-11:15 (half hour slot)
-  { id: 'break2', type: 'break', label: 'Break 2', startTime: '15:00', duration: 30, note: '' },  // 15:00-15:15
+// Fixed items: 2 Breaks (15 min each), 1 Lunch (1 hour)
+const FIXED_ITEMS = [
+  { id: 'break1', type: 'break', label: 'Break 1', duration: 15, defaultStart: '11:00' },
+  { id: 'break2', type: 'break', label: 'Break 2', duration: 15, defaultStart: '16:00' },
+  { id: 'lunch', type: 'lunch', label: 'Lunch', duration: 60, defaultStart: '13:00' },
 ]
-const DEFAULT_LUNCH = { id: 'lunch', type: 'lunch', label: 'Lunch', startTime: '13:00', duration: 60, note: '' }  // 13:00-14:00
 
 export default function DailyScheduler({ sessions, progress }) {
   const [events, setEvents] = useState([])
@@ -30,18 +30,58 @@ export default function DailyScheduler({ sessions, progress }) {
   const [editEvent, setEditEvent] = useState(null)
   const [form, setForm] = useState({ type: 'meeting', label: '', startTime: '09:00', endTime: '09:30', note: '' })
 
+  // Initialize events
   useEffect(() => {
-    // Initialize with default breaks and lunch
-    setEvents(prev => {
-      if (prev.length === 0) {
-        return [
-          ...DEFAULT_BREAKS.map(b => ({ ...b, endTime: '11:15' })),
-          { ...DEFAULT_LUNCH, endTime: '14:00' },
-        ]
+    const saved = localStorage.getItem('daily_schedule')
+    let initialEvents = []
+    
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        // Ensure fixed items are present and correct
+        FIXED_ITEMS.forEach(f => {
+          const existing = parsed.find(e => e.id === f.id)
+          if (existing) {
+            initialEvents.push({ ...existing, type: f.type, label: f.label, duration: f.duration })
+          } else {
+            initialEvents.push({ ...f, startTime: f.defaultStart, endTime: computeEndTime(f.defaultStart, f.duration), note: '' })
+          }
+        })
+        // Add custom events
+        const custom = parsed.filter(e => !FIXED_ITEMS.some(f => f.id === e.id))
+        initialEvents = [...initialEvents, ...custom]
+      } catch {
+        initialEvents = getDefaultEvents()
       }
-      return prev
-    })
+    } else {
+      initialEvents = getDefaultEvents()
+    }
+    setEvents(initialEvents)
   }, [])
+
+  // Save events
+  useEffect(() => {
+    if (events.length > 0) {
+      localStorage.setItem('daily_schedule', JSON.stringify(events))
+    }
+  }, [events])
+
+  const getDefaultEvents = () => {
+    return FIXED_ITEMS.map(f => ({
+      ...f,
+      startTime: f.defaultStart,
+      endTime: computeEndTime(f.defaultStart, f.duration),
+      note: ''
+    }))
+  }
+
+  function computeEndTime(start, durationMin) {
+    const [h, m] = start.split(':').map(Number)
+    const totalMin = h * 60 + m + durationMin
+    const endH = Math.floor(totalMin / 60)
+    const endM = totalMin % 60
+    return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`
+  }
 
   const today = new Date().toISOString().split('T')[0]
   const todaySessions = useMemo(() => {
@@ -52,16 +92,23 @@ export default function DailyScheduler({ sessions, progress }) {
   const scheduledVouchers = useMemo(() => new Set(events.filter(e => e.type === 'call').map(e => e.voucher)), [events])
   const unscheduled = useMemo(() => todaySessions.filter(s => !scheduledVouchers.has(s.voucher_number)), [todaySessions, scheduledVouchers])
 
-  // Build time grid - each event occupies its duration
+  // Build time grid
   const timeSlots = useMemo(() => {
     const grid = {}
     HALF_LABELS.forEach(slot => { grid[slot] = [] })
     
     events.forEach(ev => {
       const startIdx = HALF_LABELS.indexOf(ev.startTime)
-      const endIdx = HALF_LABELS.findIndex(slot => slot >= ev.endTime) - 1
-      for (let i = startIdx; i <= endIdx && i < HALF_LABELS.length; i++) {
-        grid[HALF_LABELS[i]].push(ev)
+      if (startIdx === -1) return
+      
+      // Calculate how many slots this event occupies
+      // Break (15m) -> 1 slot, Lunch (60m) -> 2 slots
+      const durationSlots = Math.ceil(ev.duration / 30)
+      for (let i = 0; i < durationSlots; i++) {
+        const idx = startIdx + i
+        if (idx < HALF_LABELS.length) {
+          grid[HALF_LABELS[idx]].push(ev)
+        }
       }
     })
     return grid
@@ -69,14 +116,49 @@ export default function DailyScheduler({ sessions, progress }) {
 
   const addEvent = () => {
     if (!form.label.trim()) return
-    setEvents(prev => [...prev, { id: Date.now(), type: form.type, label: form.label.trim(), startTime: form.startTime, endTime: form.endTime, note: form.note.trim() }])
+    setEvents(prev => [...prev, { id: Date.now(), type: form.type, label: form.label.trim(), startTime: form.startTime, endTime: form.endTime, duration: 30, note: form.note.trim() }])
     setEditEvent(null)
     setForm({ type: 'meeting', label: '', startTime: '09:00', endTime: '09:30', note: '' })
   }
 
-  const removeEvent = (id) => setEvents(prev => prev.filter(e => e.id !== id))
+  const removeEvent = (id) => {
+    // Don't allow removing fixed items
+    if (FIXED_ITEMS.some(f => f.id === id)) return
+    setEvents(prev => prev.filter(e => e.id !== id))
+  }
 
-  const resetSchedule = () => setEvents([...DEFAULT_BREAKS.map(b => ({ ...b, endTime: '11:15' })), { ...DEFAULT_LUNCH, endTime: '14:00' }])
+  const resetSchedule = () => {
+    setEvents(getDefaultEvents())
+  }
+
+  const handleDrop = (slot) => {
+    if (!dragItem) return
+    
+    setEvents(prev => {
+      if (dragItem.isFixed) {
+        // Moving a fixed item (break/lunch)
+        return prev.map(ev => {
+          if (ev.id === dragItem.id) {
+            return { ...ev, startTime: slot, endTime: computeEndTime(slot, ev.duration) }
+          }
+          return ev
+        })
+      } else {
+        // Placing a voucher
+        // Check if slot is occupied by another voucher (ignore breaks/lunch for voucher placement? No, usually breaks block slots)
+        const slotOccupied = timeSlots[slot].some(e => e.type === 'call')
+        if (!slotOccupied) {
+           const endMinutes = parseInt(slot.split(':')[1]) + dragItem.duration
+           const endHour = parseInt(slot.split(':')[0]) + Math.floor(endMinutes / 60)
+           const endMin = endMinutes % 60
+           const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`
+           return [...prev, { id: Date.now(), ...dragItem, endTime, note: '' }]
+        }
+        return prev
+      }
+    })
+    setDragItem(null)
+  }
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16 }}>
@@ -90,7 +172,7 @@ export default function DailyScheduler({ sessions, progress }) {
           {unscheduled.map(s => {
             const isDone = !!progress[s.voucher_number]?.completed
             return (
-              <div key={s.voucher_number} draggable onDragStart={() => setDragItem({ type: 'call', voucher: s.voucher_number, label: s.voucher_number.replace('VOU', ''), duration: 30 })}
+              <div key={s.voucher_number} draggable onDragStart={() => setDragItem({ type: 'call', voucher: s.voucher_number, label: s.voucher_number.replace('VOU', ''), duration: 30, isFixed: false })}
                 style={{ padding: '5px 7px', borderRadius: 'var(--r)', background: isDone ? 'var(--bg3)' : 'var(--bg4)', border: `1px solid ${isDone ? 'var(--border2)' : 'var(--border)'}`, opacity: isDone ? 0.4 : 1, cursor: 'grab', fontSize: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
                 <VoucherLink voucher={s.voucher_number} />
               </div>
@@ -123,20 +205,13 @@ export default function DailyScheduler({ sessions, progress }) {
           {HALF_LABELS.map((slot, i) => {
             const slotEvents = timeSlots[slot] || []
             const isFullHour = i % 2 === 0
+            // Filter out duplicates for rendering, keeping the first occurrence
+            const uniqueEvents = slotEvents.filter((ev, idx, arr) => arr.findIndex(e => e.id === ev.id) === idx)
 
             return (
               <div key={slot}
                 onDragOver={e => e.preventDefault()}
-                onDrop={() => {
-                  if (dragItem && slotEvents.length === 0) {
-                    const endMinutes = parseInt(slot.split(':')[1]) + dragItem.duration
-                    const endHour = parseInt(slot.split(':')[0]) + Math.floor(endMinutes / 60)
-                    const endMin = endMinutes % 60
-                    const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`
-                    setEvents(prev => [...prev, { id: Date.now(), ...dragItem, endTime, note: '' }])
-                    setDragItem(null)
-                  }
-                }}
+                onDrop={() => handleDrop(slot)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: isFullHour ? '5px 8px' : '3px 8px', borderRadius: 4,
@@ -145,19 +220,22 @@ export default function DailyScheduler({ sessions, progress }) {
                   borderLeft: isFullHour ? '2px solid var(--border)' : '2px solid transparent',
                 }}>
                 <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--text3)', minWidth: 36, fontFamily: 'var(--font-mono)', opacity: isFullHour ? 1 : 0.4 }}>{slot}</span>
-                {slotEvents.length > 0 ? (
+                {uniqueEvents.length > 0 ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, flex: 1 }}>
-                    {slotEvents.filter((ev, idx, arr) => arr.findIndex(e => e.id === ev.id) === idx).map(ev => {
+                    {uniqueEvents.map(ev => {
                       const c = TYPE_COLORS[ev.type]
                       return (
-                        <div key={ev.id} onClick={() => setSelectedEvent(ev)}
+                        <div key={ev.id} 
+                          draggable 
+                          onDragStart={() => setDragItem({ id: ev.id, type: ev.type, label: ev.label, duration: ev.duration, isFixed: FIXED_ITEMS.some(f => f.id === ev.id) })}
+                          onClick={() => setSelectedEvent(ev)}
                           style={{
                             display: 'flex', alignItems: 'center', gap: 4, padding: '2px 6px', borderRadius: 3,
-                            background: c.bg, border: `1px solid ${c.border}`, fontSize: 9, cursor: 'pointer',
+                            background: c.bg, border: `1px solid ${c.border}`, fontSize: 9, cursor: 'grab',
                           }}>
                           <span>{c.icon}</span>
                           <span style={{ fontWeight: 600, color: c.text }}>{ev.label}</span>
-                          <span style={{ fontSize: 8, opacity: 0.7 }}>{ev.startTime}-{ev.endTime}</span>
+                          <span style={{ fontSize: 8, opacity: 0.7 }}>{ev.startTime}-{computeEndTime(ev.startTime, ev.duration)}</span>
                         </div>
                       )
                     })}
@@ -177,7 +255,7 @@ export default function DailyScheduler({ sessions, progress }) {
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span>{TYPE_COLORS[selectedEvent.type]?.icon}</span>
                 {selectedEvent.label}
-                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text3)' }}>{selectedEvent.startTime} – {selectedEvent.endTime}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text3)' }}>{selectedEvent.startTime} – {computeEndTime(selectedEvent.startTime, selectedEvent.duration)}</span>
               </div>
               {selectedEvent.type === 'call' && <div style={{ marginBottom: 8, fontSize: 12 }}><VoucherLink voucher={selectedEvent.voucher} /></div>}
               {selectedEvent.note ? (
@@ -186,7 +264,7 @@ export default function DailyScheduler({ sessions, progress }) {
                 <div style={{ fontSize: 11, color: 'var(--text3)', fontStyle: 'italic' }}>No notes</div>
               )}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-                {selectedEvent.type !== 'break' && selectedEvent.type !== 'lunch' && (
+                {!FIXED_ITEMS.some(f => f.id === selectedEvent.id) && (
                   <button onClick={() => { removeEvent(selectedEvent.id); setSelectedEvent(null) }} style={{ padding: '4px 12px', fontSize: 11, borderRadius: 'var(--r)', border: '1px solid var(--red)', background: 'var(--red-bg)', color: 'var(--red-t)', cursor: 'pointer' }}>Delete</button>
                 )}
                 <button onClick={() => setSelectedEvent(null)} style={{ padding: '4px 12px', fontSize: 11, borderRadius: 'var(--r)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>Close</button>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Modal, Input, Textarea, Btn, Alert } from './ui'
 import { getDayLoad, CAP_DAY, fmtDate, suggestNextDate } from '../lib/sprint'
+import { addDays, format, parseISO, isWeekend } from 'date-fns'
 
 const STATUS_OPTIONS = ['Contacted', 'Processing', 'Filed', 'Completed', 'Cancelled']
 
@@ -12,12 +13,34 @@ const QUICK_ACTIONS = [
   { key: 'contacted', label: '✅ Contacted', note: 'Successfully contacted', outcome: 'contacted' },
 ]
 
+// Find alternative dates near the selected date
+function findAlternativeDates(selectedDate, dynCal, maxAlternatives = 3) {
+  if (!selectedDate) return []
+  const base = parseISO(selectedDate + 'T12:00')
+  const alternatives = []
+  
+  for (let offset = 1; alternatives.length < maxAlternatives && offset <= 14; offset++) {
+    // Try next business day
+    let candidate = addDays(base, offset)
+    while (isWeekend(candidate)) candidate = addDays(candidate, 1)
+    
+    const key = format(candidate, 'yyyy-MM-dd')
+    const load = dynCal[key]?.count || 0
+    
+    if (load < CAP_DAY) {
+      alternatives.push({ date: key, load, label: fmtDate(key) })
+    }
+  }
+  return alternatives
+}
+
 // ── Complete Modal ──
 export function CompleteModal({ open, voucher, currentDate, currentStatus, dynCal, onConfirm, onClose }) {
   const [date, setDate] = useState('')
   const [status, setStatus] = useState(currentStatus || 'Contacted')
   const [note, setNote] = useState('')
   const [selectedAction, setSelectedAction] = useState(null)
+  const [showReschedule, setShowReschedule] = useState(false)
   const today = new Date().toISOString().split('T')[0]
 
   useEffect(() => {
@@ -26,6 +49,7 @@ export function CompleteModal({ open, voucher, currentDate, currentStatus, dynCa
       setStatus(currentStatus || 'Contacted')
       setNote('')
       setSelectedAction(null)
+      setShowReschedule(false)
     }
   }, [open, currentStatus])
 
@@ -34,6 +58,8 @@ export function CompleteModal({ open, voucher, currentDate, currentStatus, dynCa
   const isWarning = load >= 12 && load < CAP_DAY
   const isCompleted = status === 'Completed'
   const isCancelled = status === 'Cancelled'
+  
+  const alternatives = date ? findAlternativeDates(date, dynCal) : []
 
   const applyQuickAction = (action) => {
     setSelectedAction(action)
@@ -41,6 +67,7 @@ export function CompleteModal({ open, voucher, currentDate, currentStatus, dynCa
     const hasNoAnswer = action.outcome === 'no_answer' || action.outcome === 'left_vm'
     const suggested = suggestNextDate(currentDate, action.outcome, dynCal, hasNoAnswer)
     setDate(suggested)
+    setShowReschedule(false)
   }
 
   return (
@@ -92,7 +119,7 @@ export function CompleteModal({ open, voucher, currentDate, currentStatus, dynCa
             type="date"
             value={date}
             min={today}
-            onChange={e => setDate(e.target.value)}
+            onChange={e => { setDate(e.target.value); setShowReschedule(false) }}
           />
         </div>
       )}
@@ -129,12 +156,34 @@ export function CompleteModal({ open, voucher, currentDate, currentStatus, dynCa
         <>
           {isSaturated && (
             <Alert variant="red" icon="⛔" title={`Day has ${load}/15 calls — at cap`}>
-              Choose a different day to avoid overloading this date.
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span>Choose a different day to avoid overloading this date.</span>
+                <Btn variant="default" size="sm" onClick={() => setShowReschedule(!showReschedule)}>
+                  {showReschedule ? 'Hide alternatives' : ' Reschedule to another day'}
+                </Btn>
+                {showReschedule && alternatives.length > 0 && (
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                    {alternatives.map(a => (
+                      <button key={a.date} onClick={() => setDate(a.date)}
+                        style={{
+                          padding: '3px 8px', fontSize: 10, borderRadius: 'var(--r)',
+                          border: '1px solid var(--green-t)', background: 'var(--green-bg)',
+                          color: 'var(--green-t)', cursor: 'pointer', fontWeight: 600,
+                        }}>
+                        {a.label} ({a.load}/15)
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {showReschedule && alternatives.length === 0 && (
+                  <div style={{ fontSize: 10, color: 'var(--text3)' }}>No lighter days found in the next 2 weeks.</div>
+                )}
+              </div>
             </Alert>
           )}
           {isWarning && !isSaturated && (
             <Alert variant="amber" icon="⚠" title={`Day has ${load}/15 calls — approaching cap`}>
-              Consider a lighter day if possible.
+              <span>Consider a lighter day if possible.</span>
             </Alert>
           )}
         </>
