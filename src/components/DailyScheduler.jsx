@@ -1,24 +1,47 @@
-import React, { useState, useMemo } from 'react'
-import { Card, StatusBadge, Modal, Textarea, Btn } from '../components/ui'
+import React, { useState, useMemo, useEffect } from 'react'
+import { Card, StatusBadge } from '../components/ui'
 import { VoucherLink } from './SessionsTable'
-import { fmtDate } from '../lib/sprint'
 
-const HOURS = Array.from({ length: 18 }, (_, i) => 9 + Math.floor(i / 2))
-const HALF_LABELS = Array.from({ length: 18 }, (_, i) => i % 2 === 0 ? ':00' : ':30')
+const HALF_LABELS = Array.from({ length: 18 }, (_, i) => {
+  const h = 9 + Math.floor(i / 2)
+  const m = (i % 2) * 30
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+})
 
 const TYPE_COLORS = {
-  call: { bg: 'rgba(79,142,247,.12)', border: 'var(--blue-t)', text: 'var(--blue-t)', icon: '📞' },
+  call: { bg: 'rgba(79,142,247,.15)', border: 'var(--blue-t)', text: 'var(--blue-t)', icon: '📞' },
+  meeting: { bg: 'rgba(155,89,247,.15)', border: '#a78bfa', text: '#a78bfa', icon: '📌' },
+  other: { bg: 'rgba(99,102,241,.15)', border: '#818cf8', text: '#818cf8', icon: '📋' },
   break: { bg: 'rgba(61,214,140,.12)', border: 'var(--green-t)', text: 'var(--green-t)', icon: '☕' },
   lunch: { bg: 'rgba(245,166,35,.12)', border: 'var(--amber-t)', text: 'var(--amber-t)', icon: '🍽️' },
-  meeting: { bg: 'rgba(155,89,247,.12)', border: '#a78bfa', text: '#a78bfa', icon: '📌' },
 }
 
-export default function DailyScheduler({ sessions, progress, onComplete }) {
-  const [events, setEvents] = useState([]) // [{ id, type, label, startTime, endTime, voucher?, note? }]
+// Pre-defined breaks and lunch
+const DEFAULT_BREAKS = [
+  { id: 'break1', type: 'break', label: 'Break 1', startTime: '11:00', duration: 30, note: '' },  // 11:00-11:15 (half hour slot)
+  { id: 'break2', type: 'break', label: 'Break 2', startTime: '15:00', duration: 30, note: '' },  // 15:00-15:15
+]
+const DEFAULT_LUNCH = { id: 'lunch', type: 'lunch', label: 'Lunch', startTime: '13:00', duration: 60, note: '' }  // 13:00-14:00
+
+export default function DailyScheduler({ sessions, progress }) {
+  const [events, setEvents] = useState([])
   const [dragItem, setDragItem] = useState(null)
-  const [editEvent, setEditEvent] = useState(null)
   const [selectedEvent, setSelectedEvent] = useState(null)
+  const [editEvent, setEditEvent] = useState(null)
   const [form, setForm] = useState({ type: 'meeting', label: '', startTime: '09:00', endTime: '09:30', note: '' })
+
+  useEffect(() => {
+    // Initialize with default breaks and lunch
+    setEvents(prev => {
+      if (prev.length === 0) {
+        return [
+          ...DEFAULT_BREAKS.map(b => ({ ...b, endTime: '11:15' })),
+          { ...DEFAULT_LUNCH, endTime: '14:00' },
+        ]
+      }
+      return prev
+    })
+  }, [])
 
   const today = new Date().toISOString().split('T')[0]
   const todaySessions = useMemo(() => {
@@ -29,32 +52,20 @@ export default function DailyScheduler({ sessions, progress, onComplete }) {
   const scheduledVouchers = useMemo(() => new Set(events.filter(e => e.type === 'call').map(e => e.voucher)), [events])
   const unscheduled = useMemo(() => todaySessions.filter(s => !scheduledVouchers.has(s.voucher_number)), [todaySessions, scheduledVouchers])
 
-  // Build time grid with events
+  // Build time grid - each event occupies its duration
   const timeSlots = useMemo(() => {
     const grid = {}
-    for (let i = 0; i < 18; i++) {
-      const h = 9 + Math.floor(i / 2)
-      const m = (i % 2) * 30
-      const key = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-      grid[key] = []
-    }
+    HALF_LABELS.forEach(slot => { grid[slot] = [] })
+    
     events.forEach(ev => {
-      const startIdx = timeToIdx(ev.startTime)
-      const endIdx = Math.min(timeToIdx(ev.endTime), 17)
-      for (let i = startIdx; i <= endIdx; i++) {
-        const h = 9 + Math.floor(i / 2)
-        const m = (i % 2) * 30
-        const key = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-        if (grid[key]) grid[key].push(ev)
+      const startIdx = HALF_LABELS.indexOf(ev.startTime)
+      const endIdx = HALF_LABELS.findIndex(slot => slot >= ev.endTime) - 1
+      for (let i = startIdx; i <= endIdx && i < HALF_LABELS.length; i++) {
+        grid[HALF_LABELS[i]].push(ev)
       }
     })
     return grid
   }, [events])
-
-  function timeToIdx(t) {
-    const [h, m] = t.split(':').map(Number)
-    return (h - 9) * 2 + (m >= 30 ? 1 : 0)
-  }
 
   const addEvent = () => {
     if (!form.label.trim()) return
@@ -65,7 +76,7 @@ export default function DailyScheduler({ sessions, progress, onComplete }) {
 
   const removeEvent = (id) => setEvents(prev => prev.filter(e => e.id !== id))
 
-  const resetSchedule = () => setEvents([])
+  const resetSchedule = () => setEvents([...DEFAULT_BREAKS.map(b => ({ ...b, endTime: '11:15' })), { ...DEFAULT_LUNCH, endTime: '14:00' }])
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16 }}>
@@ -75,11 +86,11 @@ export default function DailyScheduler({ sessions, progress, onComplete }) {
           <span>📞 Unscheduled</span>
           <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 3, background: 'var(--bg4)', color: 'var(--text3)' }}>{unscheduled.length}</span>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 400, overflowY: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 350, overflowY: 'auto' }}>
           {unscheduled.map(s => {
             const isDone = !!progress[s.voucher_number]?.completed
             return (
-              <div key={s.voucher_number} draggable onDragStart={() => setDragItem({ type: 'call', voucher: s.voucher_number, label: s.voucher_number.replace('VOU', '') })}
+              <div key={s.voucher_number} draggable onDragStart={() => setDragItem({ type: 'call', voucher: s.voucher_number, label: s.voucher_number.replace('VOU', ''), duration: 30 })}
                 style={{ padding: '5px 7px', borderRadius: 'var(--r)', background: isDone ? 'var(--bg3)' : 'var(--bg4)', border: `1px solid ${isDone ? 'var(--border2)' : 'var(--border)'}`, opacity: isDone ? 0.4 : 1, cursor: 'grab', fontSize: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
                 <VoucherLink voucher={s.voucher_number} />
               </div>
@@ -109,23 +120,25 @@ export default function DailyScheduler({ sessions, progress, onComplete }) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {Array.from({ length: 18 }).map((_, i) => {
-            const h = 9 + Math.floor(i / 2)
-            const m = (i % 2) * 30
-            const slot = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+          {HALF_LABELS.map((slot, i) => {
             const slotEvents = timeSlots[slot] || []
-            const isFullHour = m === 0
+            const isFullHour = i % 2 === 0
 
             return (
-              <div key={slot} onDragOver={e => e.preventDefault()}
+              <div key={slot}
+                onDragOver={e => e.preventDefault()}
                 onDrop={() => {
                   if (dragItem && slotEvents.length === 0) {
-                    setEvents(prev => [...prev, { id: Date.now(), ...dragItem, startTime: slot, endTime: slot.replace(':30', ':00').replace(':00', ':30'), note: '' }])
+                    const endMinutes = parseInt(slot.split(':')[1]) + dragItem.duration
+                    const endHour = parseInt(slot.split(':')[0]) + Math.floor(endMinutes / 60)
+                    const endMin = endMinutes % 60
+                    const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`
+                    setEvents(prev => [...prev, { id: Date.now(), ...dragItem, endTime, note: '' }])
                     setDragItem(null)
                   }
                 }}
                 style={{
-                  display: 'flex', alignItems: isFullHour ? 'center' : 'flex-start', gap: 6,
+                  display: 'flex', alignItems: 'center', gap: 6,
                   padding: isFullHour ? '5px 8px' : '3px 8px', borderRadius: 4,
                   background: slotEvents.length > 0 ? 'var(--bg4)' : 'transparent',
                   minHeight: isFullHour ? 32 : 20, cursor: slotEvents.length === 0 ? 'pointer' : 'default',
@@ -144,7 +157,7 @@ export default function DailyScheduler({ sessions, progress, onComplete }) {
                           }}>
                           <span>{c.icon}</span>
                           <span style={{ fontWeight: 600, color: c.text }}>{ev.label}</span>
-                          {ev.type === 'call' && <span style={{ fontSize: 8, opacity: 0.7 }}>{ev.startTime}-{ev.endTime.replace(':00', ':00')}</span>}
+                          <span style={{ fontSize: 8, opacity: 0.7 }}>{ev.startTime}-{ev.endTime}</span>
                         </div>
                       )
                     })}
@@ -173,8 +186,10 @@ export default function DailyScheduler({ sessions, progress, onComplete }) {
                 <div style={{ fontSize: 11, color: 'var(--text3)', fontStyle: 'italic' }}>No notes</div>
               )}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-                <Btn variant="danger" size="sm" onClick={() => { removeEvent(selectedEvent.id); setSelectedEvent(null) }}>Delete</Btn>
-                <Btn variant="default" size="sm" onClick={() => setSelectedEvent(null)}>Close</Btn>
+                {selectedEvent.type !== 'break' && selectedEvent.type !== 'lunch' && (
+                  <button onClick={() => { removeEvent(selectedEvent.id); setSelectedEvent(null) }} style={{ padding: '4px 12px', fontSize: 11, borderRadius: 'var(--r)', border: '1px solid var(--red)', background: 'var(--red-bg)', color: 'var(--red-t)', cursor: 'pointer' }}>Delete</button>
+                )}
+                <button onClick={() => setSelectedEvent(null)} style={{ padding: '4px 12px', fontSize: 11, borderRadius: 'var(--r)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>Close</button>
               </div>
             </Card>
           </div>
@@ -186,12 +201,15 @@ export default function DailyScheduler({ sessions, progress, onComplete }) {
             <Card style={{ width: 340 }} onClick={e => e.stopPropagation()}>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>➕ Add Event</div>
               <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                {Object.entries(TYPE_COLORS).map(([type, c]) => (
-                  <button key={type} onClick={() => setForm(f => ({ ...f, type }))}
-                    style={{ flex: 1, padding: '4px 6px', fontSize: 10, borderRadius: 'var(--r)', border: `1px solid ${form.type === type ? c.border : 'var(--border2)'}`, background: form.type === type ? c.bg : 'var(--bg3)', color: form.type === type ? c.text : 'var(--text2)', cursor: 'pointer', fontWeight: form.type === type ? 600 : 400 }}>
-                    {c.icon} {type}
-                  </button>
-                ))}
+                {['call', 'meeting', 'other'].map(type => {
+                  const c = TYPE_COLORS[type]
+                  return (
+                    <button key={type} onClick={() => setForm(f => ({ ...f, type }))}
+                      style={{ flex: 1, padding: '4px 6px', fontSize: 10, borderRadius: 'var(--r)', border: `1px solid ${form.type === type ? c.border : 'var(--border2)'}`, background: form.type === type ? c.bg : 'var(--bg3)', color: form.type === type ? c.text : 'var(--text2)', cursor: 'pointer', fontWeight: form.type === type ? 600 : 400 }}>
+                      {c.icon} {type}
+                    </button>
+                  )
+                })}
               </div>
               <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="Event name..."
                 style={{ width: '100%', padding: '7px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 12, outline: 'none', marginBottom: 10, boxSizing: 'border-box' }} />
@@ -200,22 +218,22 @@ export default function DailyScheduler({ sessions, progress, onComplete }) {
                   <label style={{ fontSize: 10, color: 'var(--text3)', display: 'block', marginBottom: 3 }}>From</label>
                   <select value={form.startTime} onChange={e => setForm(f => ({ ...f, startTime: e.target.value }))}
                     style={{ width: '100%', padding: '6px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 11, outline: 'none' }}>
-                    {Array.from({ length: 18 }).map((_, i) => { const h = 9 + Math.floor(i / 2); const m = (i % 2) * 30; const v = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; return <option key={v} value={v}>{v}</option> })}
+                    {HALF_LABELS.map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
                 </div>
                 <div>
                   <label style={{ fontSize: 10, color: 'var(--text3)', display: 'block', marginBottom: 3 }}>To</label>
                   <select value={form.endTime} onChange={e => setForm(f => ({ ...f, endTime: e.target.value }))}
                     style={{ width: '100%', padding: '6px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 11, outline: 'none' }}>
-                    {Array.from({ length: 18 }).map((_, i) => { const h = 9 + Math.floor(i / 2); const m = (i % 2) * 30; const v = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; return <option key={v} value={v}>{v}</option> })}
+                    {HALF_LABELS.map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
                 </div>
               </div>
               <textarea value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Notes (optional)..."
                 style={{ width: '100%', padding: '7px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 12, outline: 'none', resize: 'vertical', minHeight: 60, boxSizing: 'border-box', marginBottom: 14 }} />
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <Btn variant="default" size="sm" onClick={() => setEditEvent(null)}>Cancel</Btn>
-                <Btn variant="success" size="sm" onClick={addEvent} disabled={!form.label.trim()}>Add Event</Btn>
+                <button onClick={() => setEditEvent(null)} style={{ padding: '4px 12px', fontSize: 11, borderRadius: 'var(--r)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>Cancel</button>
+                <button onClick={addEvent} style={{ padding: '4px 12px', fontSize: 11, borderRadius: 'var(--r)', border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>Add Event</button>
               </div>
             </Card>
           </div>
